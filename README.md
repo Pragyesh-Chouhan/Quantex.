@@ -85,34 +85,7 @@ flowchart TD
 
 ---
 
-## 📊 Strategy Catalogue (4 Timeframes)
 
-QuantEX catalogs 18 genuine quantitative strategies across 4 distinct operational horizons:
-
-| # | Timeframe Category | Strategy Name | Strategy ID | Candle Interval | Indicators & Mathematical Rules |
-|---|---|---|---|---|---|
-| 1 | **Day / 1D** | EMA Trend (Day) | `ema_trend_day` | 1D | EMA(9) > EMA(21) crossover regime |
-| 2 | **Day / 1D** | RSI Oversold (Day) | `rsi_oversold_day` | 1D | Wilder RSI(14) < 30 entry, exit at RSI > 50 |
-| 3 | **Day / 1D** | Bollinger Dip (Day) | `bollinger_dip_day` | 1D | 20-day SMA ± 2σ; entry on lower band breach |
-| 4 | **Day / 1D** | 20-Period Breakout | `breakout_20_day` | 1D | Donchian 20-day high breakout with 10-day low exit |
-| 5 | **Day / 1D** | MACD Trend (Day) | `macd_trend_day` | 1D | MACD(12, 26, 9) signal line bullish crossover |
-| 6 | **Day / 1D** | One-Day Reversal | `one_day_reversal_day` | 1D | Statistical engulfing candle following multi-day contraction |
-| 7 | **1 Month** | Trend Following | `trend_following` | 1h | 20-EMA vs 50-EMA swing directional alignment |
-| 8 | **1 Month** | Liquidity Sweep | `liquidity_sweep` | 1h | Prior high/low stop-run wick rejection and reclaim |
-| 9 | **1 Month** | Breakout & Retest | `breakout_retest` | 1h | Resistance breakout confirmed by retest hold |
-| 10 | **1 Month** | Mean Reversion | `mean_reversion` | 1h | Bollinger Band mean-reversion to baseline SMA |
-| 11 | **1 Month** | Momentum Swing | `momentum` | 1h | Multi-period price rate of change with volume filter |
-| 12 | **1 Month** | Volume-Confirmed VWAP | `volume_confirmed_vwap` | 1h | Price crossing above session VWAP with 1.5x vol |
-| 13 | **3 Months** | SuperTrend EMA 200 | `supertrend_ema_3m` | 4h | ATR(10, 3.0) SuperTrend confirmed above 200-EMA |
-| 14 | **1 Year** | Moving Average Golden Cross | `moving_average_1y` | 1d | Macro 20-day vs 50-day SMA golden cross |
-| 15 | **1 Year** | Macro Momentum | `momentum_1y` | 1d | 126-bar (approx 6-month) price momentum regime |
-| 16 | **1 Year** | Mean Reversion Z-Score | `mean_reversion_1y` | 1d | 20-day standardized Z-score < -2.0 oversold |
-| 17 | **1 Year** | Donchian Range Breakout | `range_breakout_1y` | 1d | 20-day high breakout with 10-day low trailing stop |
-| 18 | **1 Year** | Volatility-Targeted Trend | `volatility_targeted_trend_1y` | 1d | 20/50 SMA trend scaled inversely to 10% vol |
-
-*Unpopulated Slots (6 total):* 3 Months slots 2–6 and 1 Year slot 6 are honestly presented in the Strategy Hub as "Pending Strategy Script / Missing Source File" to guarantee zero fabricated data.
-
----
 
 ## 📈 Real Delta Exchange Market Chart
 
@@ -203,20 +176,3 @@ docker-compose up --build -d
 
 ---
 
-## 🔒 Security, Zero-Secret Auditing & Remediation
-
-- **No Hardcoded Credentials:** All exchange API keys and secrets are loaded via environment variables or encrypted in SQLite using AES-256-GCM.
-- **Safe Logging:** Sensitive request headers, tokens, and HMAC signatures are scrubbed before logging.
-- **Strict Route Protection:** Protected routes verify JWT bearer tokens stored in SQLite with automatic expiration.
-- **Paper Trading Default:** Live exchange execution is turned off (`USE_LIVE_TESTNET=false`) to ensure safety during hackathon evaluations.
-
----
-
-## ⚖️ Limitations & Risk Disclaimer
-
-1. **Testnet Environment:** This project is configured to interact with the Delta Exchange Testnet. Testnet market conditions, order book depth, and matching mechanics may differ from production liquidity.
-2. **Educational & Research Purpose:** All backtest returns, Sharpe ratios, and win rates represent historical simulations. Past simulated performance is no guarantee of future returns.
-3. **No Financial Advice:** This software is provided solely for technical demonstration and hackathon evaluation. Do not risk capital you cannot afford to lose.
-#   a l g o - t r a d e  
- #   Q u a n t E X  
- 
