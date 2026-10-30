@@ -1,4 +1,4 @@
-"""Base strategy interface for Algo Boost X strategy plugin architecture."""
+"""Base strategy interface for QuantEX strategy plugin architecture."""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -41,7 +41,7 @@ class StrategyConfig:
 
 
 class BaseStrategy(ABC):
-    """Abstract base for all Algo Boost X trading strategies."""
+    """Abstract base for all QuantEX trading strategies."""
 
     # Subclasses define these class attributes
     STRATEGY_ID: str = ""

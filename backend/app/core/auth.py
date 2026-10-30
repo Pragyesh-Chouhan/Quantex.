@@ -1,4 +1,4 @@
-"""Authentication and User Security for Algo Boost X.
+"""Authentication and User Security for QuantEX.
 
 Provides PBKDF2 password hashing, cryptographically secure token generation,
 and strict FastAPI dependencies for user authentication and authorization.

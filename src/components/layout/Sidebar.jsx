@@ -6,7 +6,6 @@ import {
   Cpu,
   BarChart3,
   Link2,
-  Users,
   Settings,
   Terminal,
   TrendingUp,
@@ -14,27 +13,63 @@ import {
   PieChart,
   ChevronLeft,
   ChevronRight,
-  Compass,
   LogOut,
+  Trophy,
+  ShieldAlert,
+  Server,
+  Sparkles,
+  BookOpen,
+  Activity,
+  FileText,
+  Key,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Logo, LogoIcon } from '../common/Logo';
 
-const PRIMARY_NAV_ITEMS = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/strategies', label: 'AI Strategies', icon: Cpu, badge: '18 MODELS' },
-  { path: '/performance', label: 'Performance', icon: BarChart3 },
-  { path: '/accounts', label: 'Trading Accounts', icon: Link2, badge: 'DELTA' },
-  { path: '/mirror-leaders', label: 'Strategy Hub', icon: Compass, badge: '18 ALGO' },
-  { path: '/settings', label: 'Settings', icon: Settings },
-];
-
-const SECONDARY_NAV_ITEMS = [
-  { path: '/terminal', label: 'Trading Terminal', icon: Terminal, badge: 'LIVE' },
-  { path: '/markets', label: 'Markets', icon: TrendingUp },
-  { path: '/strategy-lab', label: 'Strategy Lab', icon: Cpu },
-  { path: '/backtesting', label: 'Backtesting', icon: History },
-  { path: '/history', label: 'Trade History', icon: History },
+const NAV_GROUPS = [
+  {
+    groupTitle: 'MAIN WORKSPACE',
+    items: [
+      { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/markets', label: 'Markets', icon: TrendingUp },
+      { path: '/strategies', label: 'AI Strategies', icon: Cpu, badge: '18 ALGO' },
+      { path: '/scorecard', label: 'Strategy Arena', icon: Trophy, badge: 'SCORECARD' },
+      { path: '/strategy-lab', label: 'Strategy Lab', icon: Cpu },
+      { path: '/backtesting', label: 'Backtesting', icon: History },
+      { path: '/performance', label: 'Performance', icon: BarChart3 },
+      { path: '/journal', label: 'Trading Journal', icon: BookOpen, badge: 'AI LOG' },
+      { path: '/history', label: 'Trade History', icon: History },
+    ],
+  },
+  {
+    groupTitle: 'PRO TRADING',
+    items: [
+      { path: '/terminal', label: 'Trading Terminal', icon: Terminal, badge: 'LIVE' },
+      { path: '/accounts', label: 'Trading Accounts', icon: Link2 },
+      { path: '/risk', label: 'Risk Command', icon: ShieldAlert, badge: 'LIMITS' },
+      { path: '/portfolio', label: 'Portfolio Asset', icon: PieChart },
+    ],
+  },
+  {
+    groupTitle: 'INTEGRATIONS',
+    items: [
+      { path: '/api-hub', label: 'Exchange API Hub', icon: Key, badge: 'DELTA IND' },
+    ],
+  },
+  {
+    groupTitle: 'INTELLIGENCE',
+    items: [
+      { path: '/copilot', label: 'AI Strategy Copilot', icon: Sparkles, badge: 'EXPLAIN' },
+    ],
+  },
+  {
+    groupTitle: 'SYSTEM & SECURITY',
+    items: [
+      { path: '/system-health', label: 'System Health', icon: Activity, badge: 'REAL' },
+      { path: '/audit-trail', label: 'Audit Trail', icon: FileText },
+      { path: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ];
 
 export const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen }) => {
@@ -84,117 +119,91 @@ export const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobile
           </button>
         </div>
 
-        {/* Navigation Items */}
-        <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {PRIMARY_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileOpen(false)}
-                className={({ isActive }) =>
-                  `relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 group ${
-                    isActive
-                      ? 'bg-[#00FF66]/15 text-[#00FF66] border border-[#00FF66]/35 font-semibold shadow-md shadow-[#00FF66]/10'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04]'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <Icon
-                      className={`w-5 h-5 shrink-0 transition-colors ${
-                        isActive ? 'text-[#00FF66]' : 'text-slate-400 group-hover:text-slate-200'
-                      }`}
-                    />
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
-                    {!isCollapsed && item.badge && (
-                      <span
-                        className="ml-auto text-[10px] font-mono px-1.5 py-0.2 rounded font-bold bg-[#00FF66]/20 text-[#00FF66] border border-[#00FF66]/30"
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                    {isActive && (
-                      <motion.div
-                        layoutId="sidebarActiveDot"
-                        className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-[#00FF66] shadow-[0_0_8px_#00FF66]"
-                      />
-                    )}
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
+        {/* Navigation Items (Categorized) */}
+        <div className="flex-1 px-3 py-3 space-y-4 overflow-y-auto custom-scrollbar">
+          {NAV_GROUPS.map((group, gIdx) => (
+            <div key={gIdx} className="space-y-1">
+              {!isCollapsed && (
+                <div className="px-3 pt-2 pb-1">
+                  <span className="text-[9px] uppercase font-mono tracking-widest text-slate-500 font-bold">
+                    {group.groupTitle}
+                  </span>
+                </div>
+              )}
 
-          {!isCollapsed && (
-            <div className="pt-4 pb-1 px-3">
-              <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500">
-                PRO TERMINAL
-              </span>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setIsMobileOpen(false)}
+                    className={({ isActive }) =>
+                      `relative flex items-center gap-3 px-3 py-2 rounded-xl font-medium text-xs transition-all duration-200 group ${
+                        isActive
+                          ? 'bg-[#00FF66]/15 text-[#00FF66] border border-[#00FF66]/35 font-semibold shadow-md shadow-[#00FF66]/10'
+                          : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04]'
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <Icon
+                          className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#00FF66]' : 'text-slate-400 group-hover:text-slate-200'
+                          }`}
+                        />
+                        {!isCollapsed && <span className="truncate">{item.label}</span>}
+                        {!isCollapsed && item.badge && (
+                          <span
+                            className={`ml-auto text-[9px] font-mono px-1.5 py-0.2 rounded font-bold border ${
+                              item.badge === 'LIVE' || item.badge === 'REAL'
+                                ? 'bg-emerald-500/20 text-[#00FF66] border-emerald-500/30'
+                                : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        )}
+                        {isActive && (
+                          <motion.div
+                            layoutId="sidebarActiveDot"
+                            className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-[#00FF66] shadow-[0_0_8px_#00FF66]"
+                          />
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
-          )}
-
-          {SECONDARY_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileOpen(false)}
-                className={({ isActive }) =>
-                  `relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 group ${
-                    isActive
-                      ? 'bg-[#00FF66]/15 text-[#00FF66] border border-[#00FF66]/35 font-semibold'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04]'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <Icon
-                      className={`w-5 h-5 shrink-0 transition-colors ${
-                        isActive ? 'text-[#00FF66]' : 'text-slate-400 group-hover:text-slate-200'
-                      }`}
-                    />
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
-                    {!isCollapsed && item.badge && (
-                      <span className="ml-auto text-[10px] font-mono px-1.5 py-0.2 rounded font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                        {item.badge}
-                      </span>
-                    )}
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
+          ))}
         </div>
 
         {/* Bottom Status & User Profile */}
-        <div className="p-3 border-t border-white/[0.06] space-y-3">
+        <div className="p-3 border-t border-white/[0.06] space-y-2">
           {/* Backend Status indicator */}
           {!isCollapsed && (
             <div className="p-2.5 rounded-xl bg-slate-900/60 border border-white/[0.04] text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-[11px] font-mono">Backend Engine:</span>
+                <span className="text-slate-400 text-[10px] font-mono">QuantEX Backend:</span>
                 <span
                   className={`flex items-center gap-1.5 font-mono text-[10px] font-semibold ${
                     backendStatus.connected ? 'text-emerald-400' : 'text-amber-400'
                   }`}
                 >
                   <span
-                    className={`w-2 h-2 rounded-full ${
+                    className={`w-1.5 h-1.5 rounded-full ${
                       backendStatus.connected
                         ? 'bg-emerald-400 shadow-[0_0_6px_#10b981]'
                         : 'bg-amber-400 animate-pulse'
                     }`}
                   />
-                  {backendStatus.connected ? 'CONNECTED' : 'SIMULATED / READY'}
+                  {backendStatus.connected ? 'LIVE ONLINE' : 'CONNECTING...'}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 mt-1 truncate font-mono">
-                {backendStatus.url || 'VITE_API_BASE_URL'}
+              <p className="text-[9px] text-slate-500 mt-0.5 truncate font-mono">
+                {backendStatus.url || 'http://localhost:8000'}
               </p>
             </div>
           )}
@@ -202,13 +211,13 @@ export const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobile
           {/* User Mini Profile */}
           <div className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/[0.04]">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
-                {user?.name ? user.name.charAt(0) : 'T'}
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shrink-0 font-mono">
+                {user?.name ? user.name.charAt(0).toUpperCase() : 'Q'}
               </div>
               {!isCollapsed && (
                 <div className="min-w-0">
-                  <div className="text-xs font-semibold text-white truncate">{user?.name || 'Trader'}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{user?.tier || 'Pro Trader'}</div>
+                  <div className="text-xs font-semibold text-white truncate">{user?.name || user?.username || 'Trader'}</div>
+                  <div className="text-[10px] text-slate-400 truncate">{user?.email || 'QuantEX User'}</div>
                 </div>
               )}
             </div>

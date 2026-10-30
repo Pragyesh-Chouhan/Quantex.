@@ -1,6 +1,6 @@
-# Developer Guide: How to Add a New Strategy to Algo Boost X
+# Developer Guide: How to Add a New Strategy to QuantEX
 
-Algo Boost X features a plugin architecture designed to allow new algorithmic strategies to be introduced without modifying the execution engine, risk manager, database, or API layer.
+QuantEX features a plugin architecture designed to allow new algorithmic strategies to be introduced without modifying the execution engine, risk manager, database, or API layer.
 
 ---
 

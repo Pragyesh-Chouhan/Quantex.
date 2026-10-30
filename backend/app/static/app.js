@@ -1,4 +1,4 @@
-// Algo Boost X Algorithmic Trading Dashboard Client
+// QuantEX Algorithmic Trading Dashboard Client
 
 let chart = null;
 let currentTab = 'positions';

@@ -6,7 +6,7 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     try {
-      const saved = localStorage.getItem('algoboostx_user');
+      const saved = localStorage.getItem('quantex_user') || localStorage.getItem('QuantEX_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -14,7 +14,7 @@ export const AuthProvider = ({ children }) => {
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return Boolean(localStorage.getItem('algoboostx_auth_token'));
+    return Boolean(localStorage.getItem('quantex_auth_token') || localStorage.getItem('QuantEX_auth_token'));
   });
 
   const [isVerifying, setIsVerifying] = useState(true);
@@ -54,7 +54,8 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
           setIsAuthenticated(false);
           setIsVerifying(false);
-          localStorage.removeItem('algoboostx_user');
+          localStorage.removeItem('quantex_user');
+          localStorage.removeItem('QuantEX_user');
         }
         return;
       }
@@ -65,16 +66,17 @@ export const AuthProvider = ({ children }) => {
           if (meRes && meRes.user_id && !meRes.error) {
             setUser(meRes);
             setIsAuthenticated(true);
-            localStorage.setItem('algoboostx_user', JSON.stringify(meRes));
+            localStorage.setItem('quantex_user', JSON.stringify(meRes));
           } else if (meRes && meRes.status === 401) {
             // Invalid or expired token — clear auth
             setAuthToken(null);
             setUser(null);
             setIsAuthenticated(false);
-            localStorage.removeItem('algoboostx_user');
+            localStorage.removeItem('quantex_user');
+            localStorage.removeItem('QuantEX_user');
           } else if (meRes && meRes.isDisconnected) {
             // Backend connection is offline; maintain cached user for offline inspection if present
-            const cached = localStorage.getItem('algoboostx_user');
+            const cached = localStorage.getItem('quantex_user') || localStorage.getItem('QuantEX_user');
             if (cached) {
               try {
                 setUser(JSON.parse(cached));
@@ -88,7 +90,8 @@ export const AuthProvider = ({ children }) => {
             setAuthToken(null);
             setUser(null);
             setIsAuthenticated(false);
-            localStorage.removeItem('algoboostx_user');
+            localStorage.removeItem('quantex_user');
+            localStorage.removeItem('QuantEX_user');
           }
           setIsVerifying(false);
         }
@@ -113,7 +116,7 @@ export const AuthProvider = ({ children }) => {
       const authUser = res.user;
       setUser(authUser);
       setIsAuthenticated(true);
-      localStorage.setItem('algoboostx_user', JSON.stringify(authUser));
+      localStorage.setItem('quantex_user', JSON.stringify(authUser));
       return { success: true, user: authUser };
     }
 
@@ -129,7 +132,7 @@ export const AuthProvider = ({ children }) => {
       const authUser = res.user;
       setUser(authUser);
       setIsAuthenticated(true);
-      localStorage.setItem('algoboostx_user', JSON.stringify(authUser));
+      localStorage.setItem('quantex_user', JSON.stringify(authUser));
       return { success: true, user: authUser };
     }
 
@@ -146,8 +149,10 @@ export const AuthProvider = ({ children }) => {
     setAuthToken(null);
     setUser(null);
     setIsAuthenticated(false);
-    localStorage.removeItem('algoboostx_user');
-    localStorage.removeItem('algoboostx_auth_token');
+    localStorage.removeItem('quantex_user');
+    localStorage.removeItem('quantex_auth_token');
+    localStorage.removeItem('QuantEX_user');
+    localStorage.removeItem('QuantEX_auth_token');
   }, []);
 
   const checkBackendNow = useCallback(async () => {

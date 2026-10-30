@@ -1,6 +1,6 @@
 """SuperTrend EMA 200 - 3-Month Trend Following Strategy.
 
-Origin: algoboostx_3month_strategy / 3-Month-SuperTrend-Strategy.py
+Origin: QuantEX_3month_strategy / 3-Month-SuperTrend-Strategy.py
 Preserves genuine ATR(10, 3.0) + EMA(200) trend regime on 4h candles.
 Signals: BUY / OPEN_LONG, SELL / CLOSE_LONG, HOLD.
 """

@@ -70,7 +70,7 @@ export const LoginPage = () => {
         setIsLoading(false);
         addToast({
           title: 'Sign In Successful',
-          message: 'Authenticated against AlgoBoostX FastAPI backend.',
+          message: 'Authenticated against QuantEX FastAPI backend.',
           type: 'success',
         });
         navigate(redirectUrl);
@@ -154,7 +154,7 @@ export const LoginPage = () => {
             </Link>
 
             <h2 className="text-2xl font-bold font-heading text-white">
-              {activeTab === 'login' ? 'Sign In to Algo boostX' : 'Create Trader Account'}
+              {activeTab === 'login' ? 'Sign In to QuantEX' : 'Create Trader Account'}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
               Institutional AI algorithmic trading & strategy lab
@@ -263,7 +263,7 @@ export const LoginPage = () => {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="trader@algoboostx.ai"
+                      placeholder="trader@QuantEX.ai"
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-white/[0.08] text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#00FF66]/50 font-mono"
                       required
                     />
@@ -354,7 +354,7 @@ export const LoginPage = () => {
                 type="email"
                 value={resetEmail}
                 onChange={(e) => setResetEmail(e.target.value)}
-                placeholder="trader@algoboostx.ai"
+                placeholder="trader@QuantEX.ai"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/[0.08] text-xs text-white focus:outline-none focus:border-[#00FF66]/50 font-mono"
                 required
               />

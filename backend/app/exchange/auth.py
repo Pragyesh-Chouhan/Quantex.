@@ -79,5 +79,5 @@ def build_auth_headers(
         "timestamp": timestamp,
         "signature": signature,
         "Content-Type": "application/json",
-        "User-Agent": "AlgoBoostX/2.0",
+        "User-Agent": "QuantEX/2.0",
     }

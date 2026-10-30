@@ -1,4 +1,4 @@
-"""Automated Trading Loop Orchestrator for Algo Boost X.
+"""Automated Trading Loop Orchestrator for QuantEX.
 
 Continuously runs the end-to-end trading pipeline:
 Market Data Ingestion -> Data Validation -> Strategy Evaluation ->

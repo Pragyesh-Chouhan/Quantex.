@@ -1,1 +1,1 @@
-# Strategy plugin architecture for Algo Boost X
+# Strategy plugin architecture for QuantEX

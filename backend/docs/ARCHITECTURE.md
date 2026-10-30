@@ -1,6 +1,6 @@
-# Algo Boost X — System Architecture
+# QuantEX — System Architecture
 
-This document outlines the architecture, data flow, component boundaries, and security model of Algo Boost X.
+This document outlines the architecture, data flow, component boundaries, and security model of QuantEX.
 
 ---
 

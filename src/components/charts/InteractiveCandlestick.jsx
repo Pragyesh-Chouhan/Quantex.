@@ -1,567 +1,1130 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { formatCurrency, formatCompactNumber } from '../../utils/formatters';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  createChart,
+  CandlestickSeries,
+  HistogramSeries,
+  LineSeries,
+  ColorType,
+  CrosshairMode,
+} from 'lightweight-charts';
+import {
+  Activity,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+  ChevronDown,
+  Search,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { api } from '../../services/api';
-import { RefreshCw, Wifi, WifiOff, AlertTriangle, Layers } from 'lucide-react';
+
+const TIMEFRAMES = [
+  { label: '1m', value: '1m' },
+  { label: '3m', value: '3m' },
+  { label: '5m', value: '5m' },
+  { label: '15m', value: '15m' },
+  { label: '30m', value: '30m' },
+  { label: '1h', value: '1h' },
+  { label: '4h', value: '4h' },
+  { label: '1d', value: '1d' },
+];
+
+const DEFAULT_PRODUCTS = [
+  { symbol: 'BTCUSD', description: 'Bitcoin Perpetual' },
+  { symbol: 'ETHUSD', description: 'Ethereum Perpetual' },
+  { symbol: 'SOLUSD', description: 'Solana Perpetual' },
+  { symbol: 'XRPUSD', description: 'Ripple Perpetual' },
+  { symbol: 'DOGEUSD', description: 'Dogecoin Perpetual' },
+  { symbol: 'BNBUSD', description: 'BNB Perpetual' },
+  { symbol: 'AVAXUSD', description: 'Avalanche Perpetual' },
+  { symbol: 'LINKUSD', description: 'Chainlink Perpetual' },
+];
+
+// Mathematical indicators calculated strictly from genuine market candles
+const calculateSMA200 = (candles, period = 200) => {
+  if (!candles || candles.length === 0) return [];
+  const effPeriod = Math.min(period, Math.max(5, Math.floor(candles.length / 2)));
+  const result = [];
+  let sum = 0;
+  for (let i = 0; i < candles.length; i++) {
+    sum += candles[i].close;
+    if (i >= effPeriod) {
+      sum -= candles[i - effPeriod].close;
+      result.push({ time: candles[i].time, value: Number((sum / effPeriod).toFixed(2)) });
+    } else if (i >= 5) {
+      result.push({ time: candles[i].time, value: Number((sum / (i + 1)).toFixed(2)) });
+    }
+  }
+  return result;
+};
+
+const calculateSupertrend = (candles, period = 10, multiplier = 3.0) => {
+  if (!candles || candles.length < period) return [];
+  const tr = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (i === 0) {
+      tr.push(candles[i].high - candles[i].low);
+    } else {
+      const hl = candles[i].high - candles[i].low;
+      const hc = Math.abs(candles[i].high - candles[i - 1].close);
+      const lc = Math.abs(candles[i].low - candles[i - 1].close);
+      tr.push(Math.max(hl, hc, lc));
+    }
+  }
+
+  const atr = [];
+  let sum = 0;
+  for (let i = 0; i < tr.length; i++) {
+    sum += tr[i];
+    if (i >= period) {
+      sum -= tr[i - period];
+      atr.push(sum / period);
+    } else {
+      atr.push(sum / (i + 1));
+    }
+  }
+
+  const result = [];
+  let prevUpper = 0, prevLower = 0, inUptrend = true;
+  for (let i = 0; i < candles.length; i++) {
+    const mid = (candles[i].high + candles[i].low) / 2;
+    const basicUpper = mid + multiplier * atr[i];
+    const basicLower = mid - multiplier * atr[i];
+    let finalUpper = basicUpper;
+    let finalLower = basicLower;
+
+    if (i > 0) {
+      finalUpper = basicUpper < prevUpper || candles[i - 1].close > prevUpper ? basicUpper : prevUpper;
+      finalLower = basicLower > prevLower || candles[i - 1].close < prevLower ? basicLower : prevLower;
+      if (inUptrend && candles[i].close < finalLower) inUptrend = false;
+      else if (!inUptrend && candles[i].close > finalUpper) inUptrend = true;
+    }
+    prevUpper = finalUpper;
+    prevLower = finalLower;
+    result.push({
+      time: candles[i].time,
+      value: Number((inUptrend ? finalLower : finalUpper).toFixed(2)),
+      color: inUptrend ? '#00FF66' : '#FF3366',
+    });
+  }
+  return result;
+};
 
 export const InteractiveCandlestick = ({
-  symbol = 'BTCUSD',
-  currentPrice: initialPrice = null,
-  change24h: initialChange = null,
-  height = 420,
+  symbol: propSymbol = 'BTCUSD',
+  height = 480,
+  onSymbolChange,
 }) => {
-  const [timeframe, setTimeframe] = useState('1h');
-  const [showMA20, setShowMA20] = useState(true);
-  const [showMA50, setShowMA50] = useState(false);
-  const [showVolume, setShowVolume] = useState(true);
-  const [hoverIndex, setHoverIndex] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState(propSymbol);
+  const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
+  const [selectedExchange, setSelectedExchange] = useState('Delta Exchange India');
+  const [products, setProducts] = useState(DEFAULT_PRODUCTS);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Real market data state
-  const [candles, setCandles] = useState([]);
-  const [ticker, setTicker] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [feedStatus, setFeedStatus] = useState('CONNECTING'); // 'LIVE_TESTNET' | 'STALE' | 'DISCONNECTED'
+  // Indicator Toggles
+  const [showSma200, setShowSma200] = useState(true);
+  const [showSupertrend, setShowSupertrend] = useState(true);
+
+  // Live Metrics
+  const [livePrice, setLivePrice] = useState(null);
+  const [priceChange, setPriceChange] = useState(null);
+  const [markPrice, setMarkPrice] = useState(null);
+  const [high24h, setHigh24h] = useState(null);
+  const [low24h, setLow24h] = useState(null);
+  const [volume24h, setVolume24h] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('CONNECTING'); // 'CONNECTED' | 'RECONNECTING' | 'STALE' | 'DISCONNECTED'
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [fetchError, setFetchError] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [tickDirection, setTickDirection] = useState(null); // 'UP' | 'DOWN'
 
-  const containerRef = useRef(null);
+  // Chart References
+  const chartContainerRef = useRef(null);
+  const chartRef = useRef(null);
+  const candleSeriesRef = useRef(null);
+  const volumeSeriesRef = useRef(null);
+  const smaSeriesRef = useRef(null);
+  const supertrendSeriesRef = useRef(null);
+  const lastCandleRef = useRef(null);
+  const rawCandlesRef = useRef([]);
 
-  // Normalize symbol for Delta Exchange (e.g. BTC/USDT -> BTCUSD, BTC -> BTCUSD)
-  const normalizedSymbol = useMemo(() => {
-    let s = (symbol || 'BTCUSD').replace('/', '').replace('-', '').toUpperCase();
-    if (s.endsWith('USDT')) s = s.replace(/USDT$/, 'USD');
-    if (!s.endsWith('USD')) s = `${s}USD`;
-    return s;
-  }, [symbol]);
+  // Sync prop symbol if changed from parent
+  useEffect(() => {
+    if (propSymbol && propSymbol !== selectedSymbol) {
+      setSelectedSymbol(propSymbol);
+    }
+  }, [propSymbol]);
 
-  // Fetch real market data from Delta Exchange Testnet via backend
-  const fetchMarketData = useCallback(async () => {
-    try {
-      setFetchError(null);
-      const [candleRes, tickerRes] = await Promise.allSettled([
-        api.markets.getCandles(normalizedSymbol, timeframe, 50),
-        api.markets.getTicker(normalizedSymbol),
-      ]);
-
-      let rawCandles = [];
-      if (candleRes.status === 'fulfilled' && candleRes.value) {
-        if (candleRes.value.candles && Array.isArray(candleRes.value.candles)) {
-          rawCandles = candleRes.value.candles;
-        } else if (Array.isArray(candleRes.value)) {
-          rawCandles = candleRes.value;
-        }
+  // Load available products for search dropdown
+  useEffect(() => {
+    let isMounted = true;
+    api.markets.getProducts().then((res) => {
+      if (isMounted && Array.isArray(res) && res.length > 0) {
+        setProducts(res);
       }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
-      if (rawCandles.length > 0) {
-        const formatted = rawCandles.map((c) => {
-          // Timestamp could be in seconds or milliseconds
-          const ts = c.time > 10000000000 ? c.time : c.time * 1000;
-          return {
-            time: new Date(ts),
+  // Filtered products for search
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery) return products.slice(0, 15);
+    const q = searchQuery.toLowerCase();
+    return products.filter(
+      (p) => p.symbol.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q))
+    ).slice(0, 15);
+  }, [products, searchQuery]);
+
+  // Initialize Lightweight Chart Canvas
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    // Clean up previous chart instance
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+    }
+
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: height,
+      layout: {
+        background: { type: ColorType.Solid, color: '#070a12' },
+        textColor: '#94a3b8',
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', 'Plus Jakarta Sans', monospace",
+      },
+      grid: {
+        vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
+        horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: 'rgba(0, 255, 102, 0.4)',
+          width: 1,
+          style: 3,
+          labelBackgroundColor: '#00FF66',
+        },
+        horzLine: {
+          color: 'rgba(0, 255, 102, 0.4)',
+          width: 1,
+          style: 3,
+          labelBackgroundColor: '#00FF66',
+        },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.22,
+        },
+      },
+      timeScale: {
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#00FF66',
+      downColor: '#FF3366',
+      borderVisible: false,
+      wickUpColor: '#00FF66',
+      wickDownColor: '#FF3366',
+    });
+
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: '#26a69a',
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: '', // Overlay on same chart
+    });
+
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
+    });
+
+    // SMA 200 Series (Gold)
+    const smaSeries = chart.addSeries(LineSeries, {
+      color: '#F59E0B',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: 'SMA 200',
+    });
+
+    // Supertrend Series (Cyan/Emerald)
+    const supertrendSeries = chart.addSeries(LineSeries, {
+      color: '#06B6D4',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: 'Supertrend',
+    });
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+    smaSeriesRef.current = smaSeries;
+    supertrendSeriesRef.current = supertrendSeries;
+
+    // Responsive Auto Resize
+    const handleResize = () => {
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+        });
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(chartContainerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, [height]);
+
+  // Update Indicator Visibility on Toggle
+  useEffect(() => {
+    smaSeriesRef.current?.applyOptions({ visible: showSma200 });
+  }, [showSma200]);
+
+  useEffect(() => {
+    supertrendSeriesRef.current?.applyOptions({ visible: showSupertrend });
+  }, [showSupertrend]);
+
+  // Load Historical Candles & Subscribe to WebSocket Stream
+  useEffect(() => {
+    let isSubscribed = true;
+    setIsLoading(true);
+
+    const loadDataAndSubscribe = async () => {
+      try {
+        // 1. Fetch initial ticker
+        const tickerRes = await api.markets.getTicker(selectedSymbol);
+        if (isSubscribed && tickerRes && tickerRes.price) {
+          setLivePrice(tickerRes.price);
+          setMarkPrice(tickerRes.mark_price || tickerRes.price);
+          setHigh24h(tickerRes.high || null);
+          setLow24h(tickerRes.low || null);
+          setVolume24h(tickerRes.volume || null);
+          setPriceChange(tickerRes.change_24h || 0);
+        }
+
+        // 2. Fetch Historical Candles from Delta India
+        const candleRes = await api.markets.getCandles(selectedSymbol, selectedTimeframe, 200);
+        if (!isSubscribed) return;
+
+        if (candleRes && Array.isArray(candleRes.candles) && candleRes.candles.length > 0) {
+          const formattedCandles = candleRes.candles.map((c) => ({
+            time: Number(c.time),
             open: Number(c.open),
             high: Number(c.high),
             low: Number(c.low),
             close: Number(c.close),
-            volume: Number(c.volume || 0),
-            isBullish: Number(c.close) >= Number(c.open),
-          };
-        });
+          }));
 
-        // Sort chronologically
-        formatted.sort((a, b) => a.time.getTime() - b.time.getTime());
-        setCandles(formatted);
+          const formattedVolumes = candleRes.candles.map((c) => ({
+            time: Number(c.time),
+            value: Number(c.volume || 0),
+            color: Number(c.close) >= Number(c.open) ? 'rgba(0, 255, 102, 0.25)' : 'rgba(255, 51, 102, 0.25)',
+          }));
 
-        // Stale detection
-        const latestTime = formatted[formatted.length - 1].time.getTime();
-        const now = Date.now();
-        const stepMs = {
-          '1m': 60 * 1000,
-          '5m': 5 * 60 * 1000,
-          '15m': 15 * 60 * 1000,
-          '1h': 60 * 60 * 1000,
-          '4h': 4 * 60 * 60 * 1000,
-          '1D': 24 * 60 * 60 * 1000,
-          '1d': 24 * 60 * 60 * 1000,
-        }[timeframe] || 60 * 60 * 1000;
+          rawCandlesRef.current = formattedCandles;
 
-        // If latest candle is within reasonable window, mark as LIVE TESTNET
-        if (now - latestTime < stepMs * 4) {
-          setFeedStatus('LIVE_TESTNET');
+          // Compute SMA 200 and Supertrend
+          const smaData = calculateSMA200(formattedCandles, 200);
+          const supertrendData = calculateSupertrend(formattedCandles, 10, 3.0);
+
+          if (candleSeriesRef.current && volumeSeriesRef.current) {
+            candleSeriesRef.current.setData(formattedCandles);
+            volumeSeriesRef.current.setData(formattedVolumes);
+            smaSeriesRef.current?.setData(smaData);
+            supertrendSeriesRef.current?.setData(supertrendData);
+            chartRef.current?.timeScale().fitContent();
+          }
+
+          const last = formattedCandles[formattedCandles.length - 1];
+          lastCandleRef.current = last;
+          setLivePrice(last.close);
+          setLastUpdated(new Date().toLocaleTimeString());
+          setConnectionStatus('CONNECTED');
         } else {
-          setFeedStatus('STALE');
+          setConnectionStatus('STALE');
         }
-      } else {
-        setFeedStatus('DISCONNECTED');
-        setFetchError('No historical candles returned from Delta Exchange.');
+      } catch (err) {
+        if (isSubscribed) setConnectionStatus('DISCONNECTED');
+      } finally {
+        if (isSubscribed) setIsLoading(false);
       }
+    };
 
-      if (tickerRes.status === 'fulfilled' && tickerRes.value && !tickerRes.value.isDisconnected) {
-        setTicker(tickerRes.value);
+    loadDataAndSubscribe();
+
+    // 3. Connect Live Delta India WebSocket for streaming ticks
+    const ws = api.createDeltaWebSocket(
+      selectedSymbol,
+      selectedTimeframe,
+      (candleUpdate) => {
+        if (!isSubscribed || !candleSeriesRef.current) return;
+        const candleData = {
+          time: candleUpdate.time,
+          open: candleUpdate.open,
+          high: candleUpdate.high,
+          low: candleUpdate.low,
+          close: candleUpdate.close,
+        };
+
+        const volData = {
+          time: candleUpdate.time,
+          value: candleUpdate.volume,
+          color: candleUpdate.close >= candleUpdate.open ? 'rgba(0, 255, 102, 0.4)' : 'rgba(255, 51, 102, 0.4)',
+        };
+
+        try {
+          candleSeriesRef.current.update(candleData);
+          volumeSeriesRef.current?.update(volData);
+
+          // Update latest candle in buffer
+          const candles = rawCandlesRef.current;
+          if (candles.length > 0) {
+            if (candles[candles.length - 1].time === candleData.time) {
+              candles[candles.length - 1] = candleData;
+            } else if (candleData.time > candles[candles.length - 1].time) {
+              candles.push(candleData);
+              if (candles.length > 300) candles.shift();
+            }
+          }
+        } catch {
+          // Ignore rare clock skew on updates
+        }
+
+        setLivePrice((prev) => {
+          if (prev !== null) {
+            setTickDirection(candleUpdate.close >= prev ? 'UP' : 'DOWN');
+          }
+          return candleUpdate.close;
+        });
+        setLastUpdated(new Date().toLocaleTimeString());
+        setConnectionStatus('CONNECTED');
+      },
+      (tickerUpdate) => {
+        if (!isSubscribed) return;
+        if (tickerUpdate.price) {
+          setLivePrice(tickerUpdate.price);
+          setMarkPrice(tickerUpdate.mark_price || tickerUpdate.price);
+          if (tickerUpdate.change_24h !== undefined) {
+            setPriceChange(tickerUpdate.change_24h);
+          }
+          setLastUpdated(new Date().toLocaleTimeString());
+        }
       }
+    );
 
-      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    } catch (err) {
-      setFeedStatus('DISCONNECTED');
-      setFetchError(err.message || 'Failed to connect to Delta Exchange feed.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [normalizedSymbol, timeframe]);
+    return () => {
+      isSubscribed = false;
+      if (ws && typeof ws.close === 'function') {
+        ws.close();
+      }
+    };
+  }, [selectedSymbol, selectedTimeframe]);
 
-  // Initial and periodic polling
-  useEffect(() => {
-    setIsLoading(true);
-    fetchMarketData();
-
-    const interval = setInterval(() => {
-      fetchMarketData();
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [fetchMarketData]);
-
-  // Active price determination
-  const livePrice = useMemo(() => {
-    if (ticker && ticker.mark_price) return Number(ticker.mark_price);
-    if (candles.length > 0) return candles[candles.length - 1].close;
-    return initialPrice || 0;
-  }, [ticker, candles, initialPrice]);
-
-  const liveChange = useMemo(() => {
-    if (ticker && ticker.price_change_percent_24h !== undefined) {
-      return Number(ticker.price_change_percent_24h);
-    }
-    if (candles.length >= 2) {
-      const first = candles[0].open;
-      const last = candles[candles.length - 1].close;
-      return Number((((last - first) / first) * 100).toFixed(2));
-    }
-    return initialChange || 0;
-  }, [ticker, candles, initialChange]);
-
-  // Compute Moving Averages
-  const ma20 = useMemo(() => {
-    return candles.map((_, idx, arr) => {
-      if (idx < 19) return null;
-      const slice = arr.slice(idx - 19, idx + 1);
-      return slice.reduce((acc, c) => acc + c.close, 0) / 20;
-    });
-  }, [candles]);
-
-  const ma50 = useMemo(() => {
-    return candles.map((_, idx, arr) => {
-      if (idx < 49) return null;
-      const slice = arr.slice(idx - 49, idx + 1);
-      return slice.reduce((acc, c) => acc + c.close, 0) / slice.length;
-    });
-  }, [candles]);
-
-  // Scaling ranges
-  const minPrice = useMemo(() => {
-    if (!candles.length) return 0;
-    return Math.min(...candles.map((c) => c.low)) * 0.998;
-  }, [candles]);
-
-  const maxPrice = useMemo(() => {
-    if (!candles.length) return 1;
-    return Math.max(...candles.map((c) => c.high)) * 1.002;
-  }, [candles]);
-
-  const maxVolume = useMemo(() => {
-    if (!candles.length) return 1;
-    return Math.max(...candles.map((c) => c.volume)) || 1;
-  }, [candles]);
-
-  const priceRange = maxPrice - minPrice || 1;
-
-  // Active candle for HUD (hovered or latest)
-  const activeCandle = hoverIndex !== null && candles[hoverIndex] ? candles[hoverIndex] : candles[candles.length - 1];
-
-  const chartWidth = 800;
-  const chartHeight = height;
-  const candleWidth = candles.length > 0 ? (chartWidth - 80) / candles.length : 16;
-  const priceAreaHeight = showVolume ? chartHeight * 0.76 : chartHeight - 40;
-  const volumeAreaHeight = chartHeight * 0.20;
-
-  const getY = (price) => {
-    return priceAreaHeight - ((price - minPrice) / priceRange) * (priceAreaHeight - 30) - 15;
-  };
-
-  // Build MA polyline points
-  const ma20Points = ma20
-    .map((val, idx) => {
-      if (val === null) return null;
-      const x = idx * candleWidth + candleWidth / 2 + 10;
-      const y = getY(val);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .filter(Boolean)
-    .join(' ');
-
-  const ma50Points = ma50
-    .map((val, idx) => {
-      if (val === null) return null;
-      const x = idx * candleWidth + candleWidth / 2 + 10;
-      const y = getY(val);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .filter(Boolean)
-    .join(' ');
-
-  const timeframes = ['5m', '15m', '1h', '4h', '1D'];
-
-  const handleMouseMove = (e) => {
-    if (!containerRef.current || !candles.length) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const svgX = (mouseX / rect.width) * chartWidth;
-    const idx = Math.floor((svgX - 10) / candleWidth);
-    if (idx >= 0 && idx < candles.length) {
-      setHoverIndex(idx);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setHoverIndex(null);
+  const handleSelectSymbol = (sym) => {
+    setSelectedSymbol(sym);
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    if (onSymbolChange) onSymbolChange(sym);
   };
 
   return (
-    <div className="relative w-full rounded-2xl bg-[#080d19]/90 border border-white/[0.08] p-4 flex flex-col gap-3 shadow-2xl overflow-hidden">
-      {/* Top Controls Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
-        {/* Symbol and price quick info */}
+    <div className="relative rounded-2xl border border-slate-800 bg-[#070a12] p-4 flex flex-col overflow-hidden shadow-2xl">
+      {/* Top Header Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 mb-3">
+        {/* Symbol & Exchange Selector */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-heading font-bold text-base text-white tracking-wide">{normalizedSymbol}</span>
-            <span className="text-sm font-mono font-bold text-slate-100">
-              {livePrice ? formatCurrency(livePrice) : '--'}
-            </span>
-            <span
-              className={`text-xs font-mono font-semibold px-2 py-0.5 rounded ${
-                liveChange >= 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
-              }`}
+          {/* Symbol Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsSearchOpen((prev) => !prev)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-emerald-500/50 text-white font-mono font-bold text-sm transition-all"
             >
-              {liveChange >= 0 ? '+' : ''}{liveChange.toFixed(2)}%
-            </span>
+              <span className="text-emerald-400 font-extrabold">{selectedSymbol}</span>
+              <span className="text-xs text-slate-400 font-normal">PERP</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {isSearchOpen && (
+              <div className="absolute left-0 top-full mt-2 w-72 rounded-xl border border-slate-800 bg-[#0b0f19] shadow-2xl z-50 p-2">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 mb-2">
+                  <Search className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search Crypto Symbol..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                  {filteredProducts.map((p) => (
+                    <button
+                      key={p.symbol}
+                      onClick={() => handleSelectSymbol(p.symbol)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
+                        selectedSymbol === p.symbol
+                          ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+                          : 'text-slate-300 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <span className="font-bold">{p.symbol}</span>
+                      <span className="text-[10px] text-slate-500 truncate max-w-[130px]">{p.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Genuine Provider Connection Status Badge */}
-          {feedStatus === 'LIVE_TESTNET' && (
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#00FF66]/15 text-[#00FF66] border border-[#00FF66]/30 flex items-center gap-1.5 shadow-[0_0_8px_rgba(0,255,102,0.2)]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00FF66] animate-pulse" />
-              DELTA TESTNET LIVE
-            </span>
-          )}
-          {feedStatus === 'STALE' && (
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1.5">
-              <AlertTriangle className="w-3 h-3" />
-              STALE FEED
-            </span>
-          )}
-          {feedStatus === 'DISCONNECTED' && (
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1.5">
-              <WifiOff className="w-3 h-3" />
-              FEED DISCONNECTED
-            </span>
-          )}
-          {feedStatus === 'CONNECTING' && (
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center gap-1.5 animate-pulse">
-              CONNECTING...
-            </span>
-          )}
-        </div>
+          {/* Exchange Pill */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {selectedExchange}
+          </div>
 
-        {/* Timeframe switchers */}
-        <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-900/90 border border-white/[0.06]">
-          {timeframes.map((tf) => (
+          {/* Indicator Toggles */}
+          <div className="hidden md:flex items-center gap-1.5 pl-2 border-l border-slate-800">
             <button
-              key={tf}
-              onClick={() => setTimeframe(tf)}
-              className={`px-2.5 py-1 text-xs font-mono rounded transition-colors ${
-                timeframe === tf
-                  ? 'bg-[#00FF66]/20 text-[#00FF66] font-bold border border-[#00FF66]/30'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setShowSma200(!showSma200)}
+              className={`px-2 py-1 rounded text-[11px] font-mono transition-all flex items-center gap-1 border ${
+                showSma200
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 font-semibold'
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
               }`}
+              title="Toggle 200-Period Simple Moving Average line"
             >
-              {tf}
+              <span className={`w-1.5 h-1.5 rounded-full ${showSma200 ? 'bg-amber-400' : 'bg-slate-600'}`} />
+              <span>SMA 200</span>
             </button>
-          ))}
+            <button
+              onClick={() => setShowSupertrend(!showSupertrend)}
+              className={`px-2 py-1 rounded text-[11px] font-mono transition-all flex items-center gap-1 border ${
+                showSupertrend
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 font-semibold'
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+              title="Toggle ATR(10, 3.0) Supertrend trailing band"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${showSupertrend ? 'bg-cyan-400' : 'bg-slate-600'}`} />
+              <span>SuperTrend</span>
+            </button>
+          </div>
         </div>
 
-        {/* Indicators, refresh and visual options */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowMA20(!showMA20)}
-            className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors ${
-              showMA20
-                ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                : 'text-slate-500 border-transparent hover:text-slate-300'
-            }`}
-          >
-            MA 20
-          </button>
-          <button
-            onClick={() => setShowMA50(!showMA50)}
-            className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors ${
-              showMA50
-                ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
-                : 'text-slate-500 border-transparent hover:text-slate-300'
-            }`}
-          >
-            MA 50
-          </button>
-          <button
-            onClick={() => setShowVolume(!showVolume)}
-            className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors ${
-              showVolume
-                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40'
-                : 'text-slate-500 border-transparent hover:text-slate-300'
-            }`}
-          >
-            VOL
-          </button>
+        {/* Live Price & 24h Stats */}
+        <div className="flex items-center gap-4">
+          {livePrice !== null ? (
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`text-xl sm:text-2xl font-mono font-extrabold transition-colors duration-300 ${
+                  tickDirection === 'UP' ? 'text-[#00FF66]' : tickDirection === 'DOWN' ? 'text-[#FF3366]' : 'text-white'
+                }`}
+              >
+                ${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {priceChange !== null && (
+                <span
+                  className={`text-xs font-mono font-semibold flex items-center gap-0.5 ${
+                    priceChange >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {priceChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="h-6 w-24 bg-slate-800 animate-pulse rounded" />
+          )}
 
-          <button
-            onClick={fetchMarketData}
-            title={lastUpdated ? `Last updated: ${lastUpdated}` : 'Refresh candles'}
-            className="p-1 rounded bg-white/[0.04] text-slate-400 hover:text-white border border-white/[0.06] transition-colors"
+          {/* Mark Price */}
+          {markPrice && (
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-[10px] uppercase font-mono text-slate-400">Mark Price</span>
+              <span className="text-xs font-mono text-slate-200">${markPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+
+          {/* 24h High/Low */}
+          {high24h && low24h && (
+            <div className="hidden lg:flex items-center gap-3 pl-3 border-l border-slate-800">
+              <div className="flex flex-col text-right">
+                <span className="text-[10px] uppercase font-mono text-slate-400">24h High</span>
+                <span className="text-xs font-mono text-slate-300">${high24h.toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col text-right">
+                <span className="text-[10px] uppercase font-mono text-slate-400">24h Low</span>
+                <span className="text-xs font-mono text-slate-300">${low24h.toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Timeframe Bar & Connection State */}
+        <div className="flex items-center gap-2">
+          {/* Timeframe Buttons */}
+          <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5">
+            {TIMEFRAMES.map((tf) => (
+              <button
+                key={tf.value}
+                onClick={() => setSelectedTimeframe(tf.value)}
+                className={`px-2 py-1 rounded text-xs font-mono transition-all ${
+                  selectedTimeframe === tf.value
+                    ? 'bg-emerald-500/20 text-[#00FF66] font-bold border border-emerald-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Live Status Badge */}
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono border ${
+              connectionStatus === 'CONNECTED'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : connectionStatus === 'RECONNECTING'
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}
+            title={`WebSocket: ${connectionStatus} (Last updated: ${lastUpdated || 'None'})`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[#00FF66]' : ''}`} />
-          </button>
+            {connectionStatus === 'CONNECTED' ? (
+              <>
+                <Wifi className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span className="hidden sm:inline font-bold">LIVE STREAM</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 text-rose-400" />
+                <span className="hidden sm:inline font-bold">{connectionStatus}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Candle HUD (Open, High, Low, Close, Volume) */}
-      {activeCandle ? (
-        <div className="flex flex-wrap items-center justify-between gap-y-1 text-xs font-mono text-slate-400 bg-slate-950/40 px-3 py-1.5 rounded-lg border border-white/[0.04]">
-          <div className="flex flex-wrap items-center gap-x-4">
-            <span className="text-slate-200">
-              {activeCandle.time.toLocaleDateString([], { month: 'short', day: 'numeric' })}{' '}
-              {activeCandle.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      {/* Chart Canvas */}
+      <div className="relative w-full flex-1 min-h-[380px]" ref={chartContainerRef}>
+        {isLoading && (
+          <div className="absolute inset-0 bg-[#070a12]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3">
+            <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" />
+            <span className="text-xs font-mono text-slate-300">
+              Streaming Delta Exchange India Candlesticks ({selectedSymbol} - {selectedTimeframe})...
             </span>
-            <span>
-              O: <span className="text-white font-semibold">{formatCurrency(activeCandle.open)}</span>
-            </span>
-            <span>
-              H: <span className="text-emerald-400 font-semibold">{formatCurrency(activeCandle.high)}</span>
-            </span>
-            <span>
-              L: <span className="text-rose-400 font-semibold">{formatCurrency(activeCandle.low)}</span>
-            </span>
-            <span>
-              C:{' '}
-              <span className={activeCandle.isBullish ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                {formatCurrency(activeCandle.close)}
-              </span>
-            </span>
-            {showVolume && (
-              <span>
-                Vol: <span className="text-cyan-300 font-semibold">{formatCompactNumber(activeCandle.volume)}</span>
-              </span>
+          </div>
+        )}
+      </div>
+
+      {/* Footer Info Bar */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 mt-2 text-[10px] font-mono text-slate-400">
+        <div className="flex items-center gap-3">
+          <span>Engine: <strong className="text-slate-300">TradingView Lightweight Charts v5</strong></span>
+          <span className="hidden sm:inline">Feed: <strong className="text-emerald-400">Delta India Public WebSocket (Raw OHLCV)</strong></span>
+          <span className="hidden md:inline text-amber-400 font-semibold">• SMA 200 Indicator</span>
+          <span className="hidden md:inline text-cyan-400 font-semibold">• SuperTrend ATR(10, 3.0)</span>
+        </div>
+        <div>
+          <span>Last Tick: <strong className="text-slate-300">{lastUpdated || 'Waiting for stream...'}</strong></span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default InteractiveCandlestick;
+
+  // Load available products for search dropdown
+  useEffect(() => {
+    let isMounted = true;
+    api.markets.getProducts().then((res) => {
+      if (isMounted && Array.isArray(res) && res.length > 0) {
+        setProducts(res);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
+
+  // Filtered products for search
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery) return products.slice(0, 15);
+    const q = searchQuery.toLowerCase();
+    return products.filter(
+      (p) => p.symbol.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q))
+    ).slice(0, 15);
+  }, [products, searchQuery]);
+
+  // Initialize Lightweight Chart Canvas
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    // Clean up previous chart instance
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+    }
+
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: height,
+      layout: {
+        background: { type: ColorType.Solid, color: '#070a12' },
+        textColor: '#94a3b8',
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', 'Plus Jakarta Sans', monospace",
+      },
+      grid: {
+        vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
+        horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: 'rgba(0, 255, 102, 0.4)',
+          width: 1,
+          style: 3,
+          labelBackgroundColor: '#00FF66',
+        },
+        horzLine: {
+          color: 'rgba(0, 255, 102, 0.4)',
+          width: 1,
+          style: 3,
+          labelBackgroundColor: '#00FF66',
+        },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.22,
+        },
+      },
+      timeScale: {
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#00FF66',
+      downColor: '#FF3366',
+      borderVisible: false,
+      wickUpColor: '#00FF66',
+      wickDownColor: '#FF3366',
+    });
+
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: '#26a69a',
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: '', // Overlay on same chart
+    });
+
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
+    });
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+
+    // Responsive Auto Resize
+    const handleResize = () => {
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+        });
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(chartContainerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, [height]);
+
+  // Load Historical Candles & Subscribe to WebSocket Stream
+  useEffect(() => {
+    let isSubscribed = true;
+    setIsLoading(true);
+
+    const loadDataAndSubscribe = async () => {
+      try {
+        // 1. Fetch initial ticker
+        const tickerRes = await api.markets.getTicker(selectedSymbol);
+        if (isSubscribed && tickerRes && tickerRes.price) {
+          setLivePrice(tickerRes.price);
+          setMarkPrice(tickerRes.mark_price || tickerRes.price);
+          setHigh24h(tickerRes.high || null);
+          setLow24h(tickerRes.low || null);
+          setVolume24h(tickerRes.volume || null);
+          setPriceChange(tickerRes.change_24h || 0);
+        }
+
+        // 2. Fetch Historical Candles from Delta India
+        const candleRes = await api.markets.getCandles(selectedSymbol, selectedTimeframe, 200);
+        if (!isSubscribed) return;
+
+        if (candleRes && Array.isArray(candleRes.candles) && candleRes.candles.length > 0) {
+          const formattedCandles = candleRes.candles.map((c) => ({
+            time: Number(c.time),
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+          }));
+
+          const formattedVolumes = candleRes.candles.map((c) => ({
+            time: Number(c.time),
+            value: Number(c.volume || 0),
+            color: Number(c.close) >= Number(c.open) ? 'rgba(0, 255, 102, 0.25)' : 'rgba(255, 51, 102, 0.25)',
+          }));
+
+          rawCandlesRef.current = formattedCandles;
+
+          // Compute SMA 200 and Supertrend
+          const smaData = calculateSMA200(formattedCandles, 200);
+          const supertrendData = calculateSupertrend(formattedCandles, 10, 3.0);
+
+          if (candleSeriesRef.current && volumeSeriesRef.current) {
+            candleSeriesRef.current.setData(formattedCandles);
+            volumeSeriesRef.current.setData(formattedVolumes);
+            smaSeriesRef.current?.setData(smaData);
+            supertrendSeriesRef.current?.setData(supertrendData);
+            chartRef.current?.timeScale().fitContent();
+          }
+
+          const last = formattedCandles[formattedCandles.length - 1];
+          lastCandleRef.current = last;
+          setLivePrice(last.close);
+          setLastUpdated(new Date().toLocaleTimeString());
+          setConnectionStatus('CONNECTED');
+        } else {
+          setConnectionStatus('STALE');
+        }
+      } catch (err) {
+        if (isSubscribed) setConnectionStatus('DISCONNECTED');
+      } finally {
+        if (isSubscribed) setIsLoading(false);
+      }
+    };
+
+    loadDataAndSubscribe();
+
+    // 3. Connect Live Delta India WebSocket for streaming ticks
+    const ws = api.createDeltaWebSocket(
+      selectedSymbol,
+      selectedTimeframe,
+      (candleUpdate) => {
+        if (!isSubscribed || !candleSeriesRef.current) return;
+        const candleData = {
+          time: candleUpdate.time,
+          open: candleUpdate.open,
+          high: candleUpdate.high,
+          low: candleUpdate.low,
+          close: candleUpdate.close,
+        };
+
+        const volData = {
+          time: candleUpdate.time,
+          value: candleUpdate.volume,
+          color: candleUpdate.close >= candleUpdate.open ? 'rgba(0, 255, 102, 0.4)' : 'rgba(255, 51, 102, 0.4)',
+        };
+
+        try {
+          candleSeriesRef.current.update(candleData);
+          volumeSeriesRef.current?.update(volData);
+
+          // Update latest candle in buffer
+          const candles = rawCandlesRef.current;
+          if (candles.length > 0) {
+            if (candles[candles.length - 1].time === candleData.time) {
+              candles[candles.length - 1] = candleData;
+            } else if (candleData.time > candles[candles.length - 1].time) {
+              candles.push(candleData);
+              if (candles.length > 300) candles.shift();
+            }
+          }
+        } catch {
+          // Ignore rare clock skew on updates
+        }
+
+        setLivePrice((prev) => {
+          if (prev !== null) {
+            setTickDirection(candleUpdate.close >= prev ? 'UP' : 'DOWN');
+          }
+          return candleUpdate.close;
+        });
+        setLastUpdated(new Date().toLocaleTimeString());
+        setConnectionStatus('CONNECTED');
+      },
+      (tickerUpdate) => {
+        if (!isSubscribed) return;
+        if (tickerUpdate.price) {
+          setLivePrice(tickerUpdate.price);
+          setMarkPrice(tickerUpdate.mark_price || tickerUpdate.price);
+          if (tickerUpdate.change_24h !== undefined) {
+            setPriceChange(tickerUpdate.change_24h);
+          }
+          setLastUpdated(new Date().toLocaleTimeString());
+        }
+      }
+    );
+
+    return () => {
+      isSubscribed = false;
+      if (ws && typeof ws.close === 'function') {
+        ws.close();
+      }
+    };
+  }, [selectedSymbol, selectedTimeframe]);
+
+  const handleSelectSymbol = (sym) => {
+    setSelectedSymbol(sym);
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    if (onSymbolChange) onSymbolChange(sym);
+  };
+
+  return (
+    <div className="relative rounded-2xl border border-slate-800 bg-[#070a12] p-4 flex flex-col overflow-hidden shadow-2xl">
+      {/* Top Header Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 mb-3">
+        {/* Symbol & Exchange Selector */}
+        <div className="flex items-center gap-3">
+          {/* Symbol Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsSearchOpen((prev) => !prev)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-emerald-500/50 text-white font-mono font-bold text-sm transition-all"
+            >
+              <span className="text-emerald-400 font-extrabold">{selectedSymbol}</span>
+              <span className="text-xs text-slate-400 font-normal">PERP</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {isSearchOpen && (
+              <div className="absolute left-0 top-full mt-2 w-72 rounded-xl border border-slate-800 bg-[#0b0f19] shadow-2xl z-50 p-2">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 mb-2">
+                  <Search className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search Crypto Symbol..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                  {filteredProducts.map((p) => (
+                    <button
+                      key={p.symbol}
+                      onClick={() => handleSelectSymbol(p.symbol)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
+                        selectedSymbol === p.symbol
+                          ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+                          : 'text-slate-300 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <span className="font-bold">{p.symbol}</span>
+                      <span className="text-[10px] text-slate-500 truncate max-w-[130px]">{p.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
-          <span className="text-[10px] text-slate-500">Source: Delta Exchange Testnet</span>
-        </div>
-      ) : (
-        <div className="h-7 bg-slate-950/20 rounded-lg animate-pulse" />
-      )}
 
-      {/* Interactive SVG Chart Canvas */}
-      <div
-        ref={containerRef}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        className="relative w-full cursor-crosshair select-none"
-        style={{ height }}
-      >
-        {isLoading && candles.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-            <div className="w-8 h-8 border-2 border-[#00FF66] border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs font-mono text-slate-400">Loading Delta Exchange OHLCV candles...</span>
+          {/* Exchange Pill */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {selectedExchange}
           </div>
-        ) : fetchError && candles.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-center p-6 border border-dashed border-rose-500/20 rounded-xl">
-            <WifiOff className="w-8 h-8 text-rose-400" />
-            <span className="text-xs font-mono text-rose-300">{fetchError}</span>
+
+          {/* Indicator Toggles */}
+          <div className="hidden md:flex items-center gap-1.5 pl-2 border-l border-slate-800">
             <button
-              onClick={fetchMarketData}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.04] text-xs font-mono text-slate-300 border border-white/[0.08] hover:border-[#00FF66]/50"
+              onClick={() => setShowSma200(!showSma200)}
+              className={`px-2 py-1 rounded text-[11px] font-mono transition-all flex items-center gap-1 border ${
+                showSma200
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 font-semibold'
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+              title="Toggle 200-Period Simple Moving Average line"
             >
-              Retry Connection
+              <span className={`w-1.5 h-1.5 rounded-full ${showSma200 ? 'bg-amber-400' : 'bg-slate-600'}`} />
+              <span>SMA 200</span>
+            </button>
+            <button
+              onClick={() => setShowSupertrend(!showSupertrend)}
+              className={`px-2 py-1 rounded text-[11px] font-mono transition-all flex items-center gap-1 border ${
+                showSupertrend
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 font-semibold'
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+              title="Toggle ATR(10, 3.0) Supertrend trailing band"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${showSupertrend ? 'bg-cyan-400' : 'bg-slate-600'}`} />
+              <span>SuperTrend</span>
             </button>
           </div>
-        ) : (
-          <svg
-            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            preserveAspectRatio="none"
-            className="w-full h-full overflow-visible"
-          >
-            {/* Background horizontal grid lines */}
-            {[0.15, 0.35, 0.55, 0.75].map((pct, idx) => {
-              const y = chartHeight * pct;
-              const priceLevel = maxPrice - pct * priceRange;
-              return (
-                <g key={idx}>
-                  <line
-                    x1="0"
-                    y1={y}
-                    x2={chartWidth - 65}
-                    y2={y}
-                    stroke="rgba(255, 255, 255, 0.05)"
-                    strokeDasharray="4 4"
-                  />
-                  <text
-                    x={chartWidth - 60}
-                    y={y + 4}
-                    fill="#64748b"
-                    fontSize="10"
-                    fontFamily="monospace"
-                  >
-                    {priceLevel.toFixed(1)}
-                  </text>
-                </g>
-              );
-            })}
+        </div>
 
-            {/* Volume divider */}
-            {showVolume && (
-              <line
-                x1="0"
-                y1={chartHeight - volumeAreaHeight}
-                x2={chartWidth - 65}
-                y2={chartHeight - volumeAreaHeight}
-                stroke="rgba(255, 255, 255, 0.08)"
-              />
-            )}
-
-            {/* Volume Bars */}
-            {showVolume &&
-              candles.map((candle, idx) => {
-                const x = idx * candleWidth + 10;
-                const barHeight = (candle.volume / maxVolume) * (volumeAreaHeight - 10);
-                const y = chartHeight - barHeight;
-                const fill = candle.isBullish ? 'rgba(0, 255, 102, 0.35)' : 'rgba(244, 63, 94, 0.35)';
-
-                return (
-                  <rect
-                    key={`vol-${idx}`}
-                    x={x + 1}
-                    y={y}
-                    width={Math.max(1, candleWidth - 3)}
-                    height={Math.max(1, barHeight)}
-                    fill={fill}
-                    rx="1"
-                  />
-                );
-              })}
-
-            {/* Candlesticks */}
-            {candles.map((candle, idx) => {
-              const x = idx * candleWidth + 10;
-              const centerX = x + candleWidth / 2;
-              const yHigh = getY(candle.high);
-              const yLow = getY(candle.low);
-              const yOpen = getY(candle.open);
-              const yClose = getY(candle.close);
-
-              const isBull = candle.isBullish;
-              const candleColor = isBull ? '#00FF66' : '#f43f5e';
-              const topBody = Math.min(yOpen, yClose);
-              const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
-
-              return (
-                <g key={`candle-${idx}`} className="transition-opacity duration-150">
-                  {/* Wick */}
-                  <line
-                    x1={centerX}
-                    y1={yHigh}
-                    x2={centerX}
-                    y2={yLow}
-                    stroke={candleColor}
-                    strokeWidth="1.25"
-                  />
-                  {/* Body */}
-                  <rect
-                    x={x + 1.5}
-                    y={topBody}
-                    width={Math.max(2, candleWidth - 3)}
-                    height={bodyHeight}
-                    fill={candleColor}
-                    stroke={candleColor}
-                    strokeWidth="0.5"
-                    rx="1"
-                  />
-                </g>
-              );
-            })}
-
-            {/* MA 20 Line */}
-            {showMA20 && ma20Points && (
-              <polyline
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={ma20Points}
-              />
-            )}
-
-            {/* MA 50 Line */}
-            {showMA50 && ma50Points && (
-              <polyline
-                fill="none"
-                stroke="#a855f7"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={ma50Points}
-              />
-            )}
-
-            {/* Crosshair Cursor */}
-            {hoverIndex !== null && activeCandle && (
-              <g>
-                <line
-                  x1={hoverIndex * candleWidth + candleWidth / 2 + 10}
-                  y1="0"
-                  x2={hoverIndex * candleWidth + candleWidth / 2 + 10}
-                  y2={chartHeight}
-                  stroke="rgba(0, 255, 102, 0.4)"
-                  strokeDasharray="3 3"
-                />
-                <line
-                  x1="0"
-                  y1={getY(activeCandle.close)}
-                  x2={chartWidth - 65}
-                  y2={getY(activeCandle.close)}
-                  stroke="rgba(0, 255, 102, 0.4)"
-                  strokeDasharray="3 3"
-                />
-                {/* Price badge on axis */}
-                <rect
-                  x={chartWidth - 65}
-                  y={getY(activeCandle.close) - 9}
-                  width="64"
-                  height="18"
-                  fill="#00FF66"
-                  rx="3"
-                />
-                <text
-                  x={chartWidth - 33}
-                  y={getY(activeCandle.close) + 3}
-                  fill="#04121d"
-                  fontSize="9"
-                  fontWeight="bold"
-                  fontFamily="monospace"
-                  textAnchor="middle"
+        {/* Live Price & 24h Stats */}
+        <div className="flex items-center gap-4">
+          {livePrice !== null ? (
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`text-xl sm:text-2xl font-mono font-extrabold transition-colors duration-300 ${
+                  tickDirection === 'UP' ? 'text-[#00FF66]' : tickDirection === 'DOWN' ? 'text-[#FF3366]' : 'text-white'
+                }`}
+              >
+                ${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {priceChange !== null && (
+                <span
+                  className={`text-xs font-mono font-semibold flex items-center gap-0.5 ${
+                    priceChange >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
                 >
-                  {activeCandle.close.toFixed(1)}
-                </text>
-              </g>
+                  {priceChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="h-6 w-24 bg-slate-800 animate-pulse rounded" />
+          )}
+
+          {/* Mark Price */}
+          {markPrice && (
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-[10px] uppercase font-mono text-slate-400">Mark Price</span>
+              <span className="text-xs font-mono text-slate-200">${markPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+
+          {/* 24h High/Low */}
+          {high24h && low24h && (
+            <div className="hidden lg:flex items-center gap-3 pl-3 border-l border-slate-800">
+              <div className="flex flex-col text-right">
+                <span className="text-[10px] uppercase font-mono text-slate-400">24h High</span>
+                <span className="text-xs font-mono text-slate-300">${high24h.toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col text-right">
+                <span className="text-[10px] uppercase font-mono text-slate-400">24h Low</span>
+                <span className="text-xs font-mono text-slate-300">${low24h.toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Timeframe Bar & Connection State */}
+        <div className="flex items-center gap-2">
+          {/* Timeframe Buttons */}
+          <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5">
+            {TIMEFRAMES.map((tf) => (
+              <button
+                key={tf.value}
+                onClick={() => setSelectedTimeframe(tf.value)}
+                className={`px-2 py-1 rounded text-xs font-mono transition-all ${
+                  selectedTimeframe === tf.value
+                    ? 'bg-emerald-500/20 text-[#00FF66] font-bold border border-emerald-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Live Status Badge */}
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono border ${
+              connectionStatus === 'CONNECTED'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : connectionStatus === 'RECONNECTING'
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}
+            title={`WebSocket: ${connectionStatus} (Last updated: ${lastUpdated || 'None'})`}
+          >
+            {connectionStatus === 'CONNECTED' ? (
+              <>
+                <Wifi className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span className="hidden sm:inline font-bold">LIVE STREAM</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 text-rose-400" />
+                <span className="hidden sm:inline font-bold">{connectionStatus}</span>
+              </>
             )}
-          </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart Canvas */}
+      <div className="relative w-full flex-1 min-h-[380px]" ref={chartContainerRef}>
+        {isLoading && (
+          <div className="absolute inset-0 bg-[#070a12]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3">
+            <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" />
+            <span className="text-xs font-mono text-slate-300">
+              Streaming Delta Exchange India Candlesticks ({selectedSymbol} - {selectedTimeframe})...
+            </span>
+          </div>
         )}
+      </div>
+
+      {/* Footer Info Bar */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 mt-2 text-[10px] font-mono text-slate-400">
+        <div className="flex items-center gap-3">
+          <span>Engine: <strong className="text-slate-300">TradingView Lightweight Charts v5</strong></span>
+          <span className="hidden sm:inline">Feed: <strong className="text-emerald-400">Delta India Public WebSocket (Raw OHLCV)</strong></span>
+          <span className="hidden md:inline text-amber-400 font-semibold">• SMA 200 Indicator</span>
+          <span className="hidden md:inline text-cyan-400 font-semibold">• SuperTrend ATR(10, 3.0)</span>
+        </div>
+        <div>
+          <span>Last Tick: <strong className="text-slate-300">{lastUpdated || 'Waiting for stream...'}</strong></span>
+        </div>
       </div>
     </div>
   );

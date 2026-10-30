@@ -4,6 +4,7 @@ from app.strategies.registry import strategy_registry
 
 # Import all strategy modules to trigger @strategy_registry.register
 from app.strategies import (
+    core_quant_strategies,   # 7 Prioritized Core Quantitative Strategies
     day_strategies,          # 6 Day strategies
     trend_following,         # 1 Month strategy 1
     liquidity_sweep,         # 1 Month strategy 2
@@ -15,7 +16,7 @@ from app.strategies import (
     year_strategies,         # 5 1-Year strategies
 )
 
-logger = logging.getLogger("algoboostx")
+logger = logging.getLogger("QuantEX")
 
 
 def load_all_strategies():

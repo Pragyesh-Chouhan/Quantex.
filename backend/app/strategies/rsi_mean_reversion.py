@@ -1,4 +1,4 @@
-"""RSI Mean Reversion Strategy — Algo Boost X strategy plugin.
+"""RSI Mean Reversion Strategy — QuantEX strategy plugin.
 
 Generates BUY when RSI recovers from oversold conditions and SELL when RSI
 reaches overbought territory. Long-only policy. Uses Wilder's smoothing.

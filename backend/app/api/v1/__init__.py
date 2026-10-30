@@ -18,6 +18,7 @@ from app.api.v1.emergency import router as emergency_router
 from app.api.v1.events import router as events_router
 from app.api.v1.breakout_research import router as breakout_research_router
 from app.api.v1.trend_research import router as trend_research_router
+from app.api.v1.copilot import router as copilot_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -37,5 +38,6 @@ api_router.include_router(emergency_router)
 api_router.include_router(events_router)
 api_router.include_router(breakout_research_router)
 api_router.include_router(trend_research_router)
+api_router.include_router(copilot_router)
 
 __all__ = ["api_router"]

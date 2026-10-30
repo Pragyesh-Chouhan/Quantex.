@@ -1,4 +1,4 @@
-"""Main FastAPI application entry point for Algo Boost X Algorithmic Trading System."""
+"""Main FastAPI application entry point for QuantEX Algorithmic Trading Platform."""
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Algo Boost X — Algorithmic Trading System for Delta Exchange Testnet",
+    description="QuantEX — Real-Time Crypto Algorithmic Trading & Quantitative Research Platform",
     lifespan=lifespan,
 )
 
@@ -84,7 +84,7 @@ def serve_dashboard():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-    return {"message": "Algo Boost X API Running. Visit /docs for Swagger UI."}
+    return {"message": "QuantEX API Running. Visit /docs for Swagger UI."}
 
 
 # Mount API Routes

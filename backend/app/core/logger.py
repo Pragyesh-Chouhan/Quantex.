@@ -45,7 +45,7 @@ class SensitiveDataFilter(logging.Filter):
         return True
 
 
-def setup_logger(name: str = "algoboostx", level: str = "INFO") -> logging.Logger:
+def setup_logger(name: str = "QuantEX", level: str = "INFO") -> logging.Logger:
     """Configures and returns a sanitized, structured logger."""
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))

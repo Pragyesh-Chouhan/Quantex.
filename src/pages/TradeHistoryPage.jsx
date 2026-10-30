@@ -66,7 +66,7 @@ export const TradeHistoryPage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `algoboostx_trade_history_${Date.now()}.csv`;
+    a.download = `QuantEX_trade_history_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

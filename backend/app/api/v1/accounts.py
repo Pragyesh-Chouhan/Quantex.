@@ -62,6 +62,10 @@ async def connect_account(
             detail="Only Testnet environment ('testnet') is supported for this hackathon edition. Mainnet trading is strictly prohibited."
         )
 
+    base_url = req.base_url.strip() if req.base_url else (
+        settings.DELTA_INDIA_BASE_URL if env in ["production", "mainnet"] else settings.DELTA_TESTNET_BASE_URL
+    )
+
     api_key_clean = req.api_key.strip()
     api_secret_clean = req.api_secret.strip()
 
@@ -205,5 +209,159 @@ async def get_active_account_status(
         public_api_healthy=public_ok,
         private_auth_healthy=is_valid,
         has_active_account=True,
-        message=auth_msg if not is_valid else "Connected and authenticated on Delta Exchange Testnet",
+        message=auth_msg if not is_valid else f"Connected and authenticated on Delta Exchange ({active_account.environment})",
     )
+
+
+@router.get("/egress-ip")
+async def get_server_egress_ip():
+    """Detects backend server outbound public egress IP and returns IP whitelisting guidance."""
+    import httpx
+    detected_ip = "127.0.0.1"
+    is_public = False
+    provider_source = "localhost"
+
+    for service_url in ["https://api.ipify.org?format=json", "https://ifconfig.me/all.json"]:
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.get(service_url)
+                if res.status_code == 200:
+                    data = res.json()
+                    ip = data.get("ip") or data.get("ip_addr")
+                    if ip and not ip.startswith(("127.", "192.168.", "10.")):
+                        detected_ip = ip
+                        is_public = True
+                        provider_source = service_url
+                        break
+        except Exception:
+            continue
+
+    return {
+        "egress_ip": detected_ip,
+        "is_public_ip": is_public,
+        "detection_source": provider_source,
+        "is_whitelisted_hint": "Configure this IP address in your Delta Exchange Developer API settings under 'IP Whitelist' restriction.",
+        "deployment_mode": "Production/VPS Static IP" if is_public else "Localhost Development",
+        "instructions": [
+            "1. Log in to Delta Exchange India (https://india.delta.exchange) or Delta Testnet.",
+            "2. Navigate to Profile > API Keys > Create New API Key.",
+            "3. Select permissions: 'Read & Trade' (DO NOT enable 'Withdrawal').",
+            f"4. Enter the Outbound Egress IP '{detected_ip}' in the Allowed IPs field.",
+            "5. Save the generated API Key and Secret in QuantEX Exchange API Hub.",
+        ],
+    }
+
+
+@router.get("/{account_id}/balance")
+async def get_account_balance(
+    account_id: str,
+    user_id: str = Query(default="default_user"),
+    db: Session = Depends(get_db),
+):
+    """Retrieves live wallet balances for the specific authenticated account."""
+    account = db.query(AccountConnection).filter(
+        AccountConnection.account_id == account_id,
+        AccountConnection.user_id == user_id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found or not owned by user")
+
+    try:
+        client = DeltaExchangeClient.from_account_connection(account)
+        balances = await client.get_wallet_balances()
+        total = sum(b.balance for b in balances)
+        available = sum(b.available_balance for b in balances)
+        return {
+            "account_id": account.account_id,
+            "label": account.label,
+            "environment": account.environment,
+            "total_balance_usd": round(total, 2),
+            "available_balance_usd": round(available, 2),
+            "balances": [b.model_dump() for b in balances],
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch balance for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Exchange balance query failed: {str(e)}"
+        )
+
+
+@router.get("/{account_id}/positions")
+async def get_account_positions(
+    account_id: str,
+    user_id: str = Query(default="default_user"),
+    db: Session = Depends(get_db),
+):
+    """Retrieves open positions for the specific authenticated account."""
+    account = db.query(AccountConnection).filter(
+        AccountConnection.account_id == account_id,
+        AccountConnection.user_id == user_id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found or not owned by user")
+
+    try:
+        client = DeltaExchangeClient.from_account_connection(account)
+        positions = await client.get_positions()
+        return [p.model_dump() for p in positions]
+    except Exception as e:
+        logger.error(f"Failed to fetch positions for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Exchange positions query failed: {str(e)}"
+        )
+
+
+@router.get("/{account_id}/orders")
+async def get_account_orders(
+    account_id: str,
+    user_id: str = Query(default="default_user"),
+    db: Session = Depends(get_db),
+):
+    """Retrieves active open orders for the specific authenticated account."""
+    account = db.query(AccountConnection).filter(
+        AccountConnection.account_id == account_id,
+        AccountConnection.user_id == user_id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found or not owned by user")
+
+    try:
+        client = DeltaExchangeClient.from_account_connection(account)
+        orders = await client.get_open_orders()
+        return orders
+    except Exception as e:
+        logger.error(f"Failed to fetch open orders for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Exchange orders query failed: {str(e)}"
+        )
+
+
+@router.get("/{account_id}/trades")
+async def get_account_trades(
+    account_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    user_id: str = Query(default="default_user"),
+    db: Session = Depends(get_db),
+):
+    """Retrieves trade execution history (fills) for the specific authenticated account."""
+    account = db.query(AccountConnection).filter(
+        AccountConnection.account_id == account_id,
+        AccountConnection.user_id == user_id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found or not owned by user")
+
+    try:
+        client = DeltaExchangeClient.from_account_connection(account)
+        fills = await client.get_fills(limit=limit)
+        return fills
+    except Exception as e:
+        logger.error(f"Failed to fetch trade fills for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Exchange trade history query failed: {str(e)}"
+        )

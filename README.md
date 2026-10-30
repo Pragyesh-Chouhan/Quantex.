@@ -1,4 +1,4 @@
-# ALGOboostX — Algorithmic Trading Platform & Quantitative Strategy Engine
+# QuantEX — Algorithmic Trading Platform & Quantitative Strategy Engine
 **Hackathon Submission Edition • Delta Exchange Testnet Live Market Integration**
 
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
@@ -8,7 +8,7 @@
 [![Delta Exchange](https://img.shields.io/badge/Delta%20Exchange-Testnet%20Verified-00FF66.svg)](https://testnet.delta.exchange/)
 [![Tests](https://img.shields.io/badge/Pytest-93%20Passed%20(100%25)-brightgreen.svg)]()
 
-ALGOboostX is a production-grade algorithmic trading platform, quantitative strategy backtester, and fintech execution dashboard. The platform features an end-to-end algorithmic signal pipeline, 18 genuine quantitative strategies organized across 4 timeframes (Day, 1 Month, 3 Months, 1 Year), live Delta Exchange Testnet OHLCV candlestick charting, an institutional 8-rule risk validation engine, and automated paper trading order lifecycle reconciliation.
+QuantEX is a production-grade algorithmic trading platform, quantitative strategy backtester, and fintech execution dashboard. The platform features an end-to-end algorithmic signal pipeline, 18 genuine quantitative strategies organized across 4 timeframes (Day, 1 Month, 3 Months, 1 Year), live Delta Exchange Testnet OHLCV candlestick charting, an institutional 8-rule risk validation engine, and automated paper trading order lifecycle reconciliation.
 
 ---
 
@@ -35,7 +35,7 @@ ALGOboostX is a production-grade algorithmic trading platform, quantitative stra
 - **Disconnected Strategies:** Quantitative models often exist as isolated research scripts in notebooks, unintegrated with live market order books or risk controls.
 - **Premature Real-Money Exposure:** Novice traders frequently deploy untested algorithmic logic without strict risk validation, leading to catastrophic liquidation from slippage, order-book latency, and duplicate events.
 
-### The ALGOboostX Solution
+### The QuantEX Solution
 - **Real Market Ingestion:** Direct REST integration with Delta Exchange Testnet (`BTCUSD` perpetuals) fetching real OHLCV candles, 24h ticker, and order book states.
 - **Genuine Strategy Plugin Architecture:** All 18 strategies inherit from a unified `BaseStrategy` class with typed signals (`OPEN_LONG`, `CLOSE_LONG`, `HOLD`), mathematical indicator calculation, and idempotent execution.
 - **Transparent Catalogue:** Strictly displays genuine implementations (18 present out of 24 planned slots: Day 6/6, 1M 6/6, 3M 1/6, 1Y 5/6). Missing slots are explicitly labeled without fabricated cards or fake performance.
@@ -87,7 +87,7 @@ flowchart TD
 
 ## 📊 Strategy Catalogue (4 Timeframes)
 
-AlgoBoostX catalogs 18 genuine quantitative strategies across 4 distinct operational horizons:
+QuantEX catalogs 18 genuine quantitative strategies across 4 distinct operational horizons:
 
 | # | Timeframe Category | Strategy Name | Strategy ID | Candle Interval | Indicators & Mathematical Rules |
 |---|---|---|---|---|---|

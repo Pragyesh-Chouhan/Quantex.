@@ -16,7 +16,7 @@ export const DashboardLayout = () => {
       <div className="min-h-screen bg-[#05070E] text-slate-100 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#00FF66] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-mono text-slate-400">Authenticating AlgoBoostX session...</span>
+          <span className="text-xs font-mono text-slate-400">Authenticating QuantEX session...</span>
         </div>
       </div>
     );

@@ -171,7 +171,7 @@ export const TradingAccountsPage = () => {
       <div className="p-5 rounded-2xl bg-[#090d16] border border-white/[0.06] flex items-start gap-3.5 text-xs text-slate-400">
         <Shield className="w-5 h-5 text-[#00FF66] shrink-0 mt-0.5" />
         <div className="leading-relaxed">
-          <span className="font-semibold text-white">How API Credentials Work:</span> Connecting a broker gives Algo boostX direct access to stream simulated quotes and place orders. We never request withdrawal permissions—only read and trade scopes are supported.
+          <span className="font-semibold text-white">How API Credentials Work:</span> Connecting a broker gives QuantEX direct access to stream simulated quotes and place orders. We never request withdrawal permissions—only read and trade scopes are supported.
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-// Utility formatters for Algo boostX
+// Utility formatters for QuantEX
 
 export const formatCurrency = (val, decimals = 2) => {
   if (val === null || val === undefined || isNaN(val)) return '$0.00';

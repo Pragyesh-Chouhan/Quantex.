@@ -83,10 +83,10 @@ export const TradingTerminalPage = () => {
     setConfirmModalOpen(true);
   };
 
-  const handleExecuteConfirmedOrder = () => {
+  const handleExecuteConfirmedOrder = async () => {
     setIsSubmitting(true);
-    setTimeout(() => {
-      executeSimulatedOrder({
+    try {
+      await executeSimulatedOrder({
         symbol: selectedSymbol,
         side: orderSide,
         type: orderType,
@@ -95,9 +95,10 @@ export const TradingTerminalPage = () => {
         stopLoss,
         takeProfit,
       });
+    } finally {
       setIsSubmitting(false);
       setConfirmModalOpen(false);
-    }, 600);
+    }
   };
 
   const bottomTabsList = [
@@ -618,7 +619,7 @@ export const TradingTerminalPage = () => {
         isOpen={confirmModalOpen}
         onClose={() => setConfirmModalOpen(false)}
         title="Confirm Simulated Order Placement"
-        subtitle="Algo boostX Simulated Execution Engine"
+        subtitle="QuantEX Simulated Execution Engine"
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setConfirmModalOpen(false)}>

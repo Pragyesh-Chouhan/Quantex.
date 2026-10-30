@@ -1,23 +1,21 @@
 /**
- * Centralized API Service for Algo boostX
- * Designed for seamless integration with the backend developer's APIs.
- *
- * All requests read base URL from import.meta.env.VITE_API_BASE_URL
- * Defaults safely to demo mode if backend is unreachable or not yet deployed.
+ * Centralized API Service for QuantEX
+ * Real-Time Crypto Algorithmic Trading & Quantitative Research Platform
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+const DELTA_WS_URL = 'wss://public-socket.india.delta.exchange';
 
-// In-memory token storage (never store sensitive secrets in code)
-let authToken = localStorage.getItem('algoboostx_auth_token') || null;
+// In-memory token storage (persisted across reloads)
+let authToken = localStorage.getItem('quantex_auth_token') || localStorage.getItem('QuantEX_auth_token') || null;
 
 export const setAuthToken = (token) => {
   authToken = token;
   if (token) {
-    localStorage.setItem('algoboostx_auth_token', token);
+    localStorage.setItem('quantex_auth_token', token);
   } else {
-    localStorage.removeItem('algoboostx_auth_token');
+    localStorage.removeItem('quantex_auth_token');
+    localStorage.removeItem('QuantEX_auth_token');
   }
 };
 
@@ -54,7 +52,7 @@ async function request(endpoint, options = {}) {
         success: false,
         status: response.status,
         isDisconnected: false,
-        error: message,
+        error: typeof message === 'object' ? JSON.stringify(message) : message,
         data: errorData,
       };
     }
@@ -62,7 +60,6 @@ async function request(endpoint, options = {}) {
     return await response.json();
   } catch (err) {
     clearTimeout(timeoutId);
-    // Return structured error for network failure
     return {
       success: false,
       status: 0,
@@ -91,6 +88,9 @@ export const api = {
       } catch (err) {
         return { connected: false, url: API_BASE_URL, status: 'offline', error: err.message };
       }
+    },
+    getSystemHealth: async () => {
+      return await request('/api/v1/system/health');
     },
   },
 
@@ -135,7 +135,7 @@ export const api = {
     },
   },
 
-  // 3. Broker / Exchange Accounts (Real Integrations)
+  // 3. Broker / Exchange Accounts (Real Integrations & Egress IP)
   accounts: {
     list: async (userId = 'default_user') => {
       return await request(`/api/v1/accounts?user_id=${encodeURIComponent(userId)}`);
@@ -143,13 +143,16 @@ export const api = {
     getStatus: async (userId = 'default_user') => {
       return await request(`/api/v1/accounts/status?user_id=${encodeURIComponent(userId)}`);
     },
+    getEgressIp: async () => {
+      return await request('/api/v1/accounts/egress-ip');
+    },
     validate: async (credentials) => {
       return await request('/api/v1/accounts/validate', {
         method: 'POST',
         body: JSON.stringify({
           api_key: credentials.apiKey || credentials.api_key,
           api_secret: credentials.secretKey || credentials.api_secret,
-          base_url: credentials.baseUrl || 'https://cdn-ind.testnet.deltaex.org',
+          base_url: credentials.baseUrl || 'https://api.india.delta.exchange',
         }),
       });
     },
@@ -158,12 +161,12 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({
           user_id: data.userId || 'default_user',
-          label: data.label || 'Delta Exchange Testnet',
-          environment: 'testnet',
+          label: data.label || 'Delta Exchange India Account',
+          environment: data.environment || 'testnet',
           base_url: data.baseUrl || 'https://cdn-ind.testnet.deltaex.org',
           api_key: data.apiKey || data.api_key,
           api_secret: data.secretKey || data.api_secret,
-          ip_whitelist_note: data.ipWhitelistNote || 'Connected via AlgoBoostX Platform',
+          ip_whitelist_note: data.ipWhitelistNote || 'Configured in QuantEX API Hub',
         }),
       });
     },
@@ -183,16 +186,19 @@ export const api = {
     },
   },
 
-  // 4. Markets & Instruments
+  // 4. Markets & Real-Time Instruments
   markets: {
-    getInstruments: async () => {
-      return await request('/api/v1/exchange/products');
+    getExchanges: async () => {
+      return await request('/api/v1/market/exchanges');
+    },
+    getProducts: async () => {
+      return await request('/api/v1/market/products');
     },
     getTicker: async (symbol = 'BTCUSD') => {
-      return await request(`/api/market/ticker?symbol=${encodeURIComponent(symbol)}`);
+      return await request(`/api/v1/market/ticker?symbol=${encodeURIComponent(symbol)}`);
     },
-    getCandles: async (symbol = 'BTCUSD', timeframe = '5m', limit = 50) => {
-      return await request(`/api/market/candles?symbol=${encodeURIComponent(symbol)}&resolution=${timeframe}&limit=${limit}`);
+    getCandles: async (symbol = 'BTCUSD', timeframe = '5m', limit = 150) => {
+      return await request(`/api/v1/market/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`);
     },
   },
 
@@ -212,10 +218,13 @@ export const api = {
     },
   },
 
-  // 6. AI Strategies
+  // 6. Quantitative Strategies & Scorecard
   strategies: {
     list: async () => {
       return await request('/api/v1/strategies');
+    },
+    getScorecard: async () => {
+      return await request('/api/v1/strategies/arena/scorecard');
     },
     getById: async (id) => {
       return await request(`/api/v1/strategies/${id}`);
@@ -238,54 +247,206 @@ export const api = {
         body: JSON.stringify(config),
       });
     },
-  },
-
-  // 7. Orders & History
-  orders: {
-    list: async (limit = 20) => {
-      return await request(`/api/v1/orders?limit=${limit}`);
+    getChartData: async (strategyId, symbol = 'BTCUSD', timeframe = '5m', limit = 120) => {
+      return await request(`/api/v1/strategies/${encodeURIComponent(strategyId)}/chart-data?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`);
+    },
+    addUserStrategy: async (data) => {
+      return await request('/api/v1/strategies/user/add', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    getUserStrategies: async (userId = 'default_user') => {
+      return await request(`/api/v1/strategies/user/my-strategies?user_id=${encodeURIComponent(userId)}`);
+    },
+    removeUserStrategy: async (runId, userId = 'default_user') => {
+      return await request(`/api/v1/strategies/user/${encodeURIComponent(runId)}?user_id=${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+      });
     },
   },
 
-  // 8. Risk Management Controls
+  // 7. Orders & Positions Execution
+  orders: {
+    list: async (limit = 20, userId = 'default_user') => {
+      return await request(`/api/v1/orders?limit=${limit}&user_id=${encodeURIComponent(userId)}`);
+    },
+    create: async (orderData) => {
+      return await request('/api/v1/orders', {
+        method: 'POST',
+        body: JSON.stringify(orderData),
+      });
+    },
+    cancel: async (orderId, userId = 'default_user') => {
+      return await request(`/api/v1/orders/${encodeURIComponent(orderId)}?user_id=${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  positions: {
+    list: async (userId = 'default_user') => {
+      return await request(`/api/v1/positions?user_id=${encodeURIComponent(userId)}`);
+    },
+    close: async (instrument, userId = 'default_user') => {
+      return await request('/api/v1/positions/close', {
+        method: 'POST',
+        body: JSON.stringify({ instrument, user_id: userId }),
+      });
+    },
+  },
+
+  // 8. Mirror Leaders
+  mirror: {
+    getLeaders: async () => {
+      return await request('/api/v1/strategies/mirror/leaders');
+    },
+    follow: async (leaderId, data = {}) => {
+      return await request(`/api/v1/strategies/mirror/${encodeURIComponent(leaderId)}/follow`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+  },
+
+  // 8. Risk Command Center Controls
   risk: {
     getStatus: async () => {
       return await request('/api/v1/risk/status');
     },
-    killSwitch: async (reason = 'Operator manual kill-switch activated') => {
+    killSwitch: async (reason = 'Emergency Kill Switch Triggered by Operator', cancelOrders = True) => {
       return await request('/api/v1/risk/kill-switch', {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, cancel_orders: cancelOrders }),
       });
     },
-    resetEmergency: async () => {
-      return await request('/api/v1/risk/reset-emergency', { method: 'POST' });
+    resetKillSwitch: async () => {
+      return await request('/api/v1/risk/reset', { method: 'POST' });
+    },
+    updateLimits: async (limits) => {
+      return await request('/api/v1/risk/limits', {
+        method: 'POST',
+        body: JSON.stringify(limits),
+      });
     },
   },
 
-  // 9. WebSocket Stream Manager
-  createWebSocketConnection: (channel = 'ticker', onMessage, onError) => {
+  // 9. Explainable AI Copilot
+  copilot: {
+    analyze: async (query, strategyId = null, symbol = 'BTCUSD', timeframe = '5m') => {
+      return await request('/api/v1/copilot/analyze', {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          strategy_id: strategyId,
+          symbol,
+          timeframe,
+        }),
+      });
+    },
+  },
+
+  // 10. System Events & Audit Trail
+  events: {
+    list: async (params = {}) => {
+      const query = new URLSearchParams();
+      if (params.category) query.append('category', params.category);
+      if (params.severity) query.append('severity', params.severity);
+      if (params.search) query.append('search', params.search);
+      if (params.limit) query.append('limit', params.limit);
+      return await request(`/api/v1/events?${query.toString()}`);
+    },
+    summary: async () => {
+      return await request('/api/v1/events/summary');
+    },
+    record: async (category, severity, message, details = null) => {
+      return await request('/api/v1/events/record', {
+        method: 'POST',
+        body: JSON.stringify({ category, severity, message, details }),
+      });
+    },
+  },
+
+  // 11. Delta Exchange India Live WebSocket Feed
+  createDeltaWebSocket: (symbol = 'BTCUSD', timeframe = '5m', onCandle, onTicker, onStatus) => {
     let ws = null;
-    try {
-      ws = new WebSocket(`${WS_BASE_URL}?channel=${channel}`);
-      ws.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          onMessage && onMessage(parsed);
-        } catch {
-          onMessage && onMessage(event.data);
-        }
-      };
-      ws.onerror = (err) => {
-        onError && onError(err);
-      };
-      ws.onclose = () => {};
-    } catch (err) {
-      onError && onError(err);
-    }
+    let isClosedByUser = false;
+    let reconnectTimeout = null;
+
+    const channelName = timeframe === '1m' ? 'candlestick_1m' : (timeframe === '15m' ? 'candlestick_15m' : 'candlestick_5m');
+
+    const connect = () => {
+      try {
+        onStatus && onStatus('CONNECTING');
+        ws = new WebSocket(DELTA_WS_URL);
+
+        ws.onopen = () => {
+          onStatus && onStatus('CONNECTED');
+          const subMsg = {
+            type: 'subscribe',
+            payload: {
+              channels: [
+                { name: channelName, symbols: [symbol] },
+                { name: 'ticker', symbols: [symbol] },
+              ],
+            },
+          };
+          ws.send(JSON.stringify(subMsg));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.c && data.o && data.h && data.l) {
+              // Candlestick update
+              onCandle && onCandle({
+                time: Math.floor((data.cst || data.ts) / 1000000),
+                open: parseFloat(data.o),
+                high: parseFloat(data.h),
+                low: parseFloat(data.l),
+                close: parseFloat(data.c),
+                volume: parseFloat(data.v || 0),
+              });
+            } else if (data.symbol === symbol || (data.close && data.mark_price)) {
+              // Ticker update
+              onTicker && onTicker({
+                price: parseFloat(data.close),
+                mark_price: parseFloat(data.mark_price || data.close),
+                high: parseFloat(data.high || 0),
+                low: parseFloat(data.low || 0),
+                volume: parseFloat(data.volume || 0),
+              });
+            }
+          } catch {
+            // Ignore parse errors on ping/pong
+          }
+        };
+
+        ws.onerror = () => {
+          onStatus && onStatus('ERROR');
+        };
+
+        ws.onclose = () => {
+          if (!isClosedByUser) {
+            onStatus && onStatus('RECONNECTING');
+            reconnectTimeout = setTimeout(connect, 3000);
+          } else {
+            onStatus && onStatus('DISCONNECTED');
+          }
+        };
+      } catch {
+        onStatus && onStatus('ERROR');
+      }
+    };
+
+    connect();
+
     return {
-      close: () => ws && ws.close(),
-      send: (data) => ws && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(data)),
+      close: () => {
+        isClosedByUser = true;
+        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        if (ws) ws.close();
+      },
     };
   },
 };

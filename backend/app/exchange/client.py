@@ -150,16 +150,36 @@ class DeltaExchangeClient:
         if not self.api_key or not self.api_secret:
             return False, "Missing API Key or API Secret", {}
 
-        try:
-            res = await self._send_request("GET", "/v2/wallet/balances", auth_required=True)
-            result = res.get("result", [])
-            return True, "Delta Exchange authentication successful", {"balances_count": len(result)}
-        except AuthenticationError as e:
-            return False, f"Authentication failed: {str(e)}", {}
-        except ExchangeConnectionError as e:
-            return False, f"Exchange connection failed: {str(e)}", {}
-        except Exception as e:
-            return False, f"Unexpected validation error: {str(e)}", {}
+        urls_to_test = [self.base_url]
+        if settings.DELTA_INDIA_BASE_URL not in urls_to_test:
+            urls_to_test.append(settings.DELTA_INDIA_BASE_URL)
+        if settings.DELTA_TESTNET_BASE_URL not in urls_to_test:
+            urls_to_test.append(settings.DELTA_TESTNET_BASE_URL)
+
+        last_error = ""
+        for url in urls_to_test:
+            original_url = self.base_url
+            self.base_url = url
+            try:
+                res = await self._send_request("GET", "/v2/wallet/balances", auth_required=True)
+                result = res.get("result", [])
+                env_label = "Delta Exchange India (Live)" if "api.india" in url else "Delta Testnet"
+                return True, f"Authentication successful on {env_label}", {
+                    "base_url": url,
+                    "environment": "mainnet" if "api.india" in url else "testnet",
+                    "balances_count": len(result),
+                    "balances": result,
+                }
+            except AuthenticationError as e:
+                last_error = f"Authentication failed on Delta ({url}): {str(e)}"
+            except ExchangeConnectionError as e:
+                last_error = f"Exchange unreachable ({url}): {str(e)}"
+            except Exception as e:
+                last_error = f"Validation error ({url}): {str(e)}"
+            finally:
+                self.base_url = original_url
+
+        return False, last_error or "Authentication failed against Delta Exchange. Check API Key, Secret, and IP Whitelist.", {}
 
     async def ping_connectivity(self) -> bool:
         """Checks overall connectivity (public and private if configured)."""
@@ -251,60 +271,114 @@ class DeltaExchangeClient:
     ) -> List[Candle]:
         """Retrieves real historical OHLCV candles from Delta Exchange."""
         end_time = int(time.time())
-        step_seconds = 60
-        if resolution == "5m":
-            step_seconds = 300
-        elif resolution == "15m":
-            step_seconds = 900
-        elif resolution == "1h":
-            step_seconds = 3600
-        elif resolution == "4h":
-            step_seconds = 14400
-        elif resolution in ["1d", "1D"]:
-            step_seconds = 86400
-
+        res_map = {
+            "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
+            "1h": "60", "4h": "240", "1d": "D", "1D": "D",
+            "1": "1", "3": "3", "5": "5", "15": "15", "30": "30",
+            "60": "60", "240": "240", "D": "D"
+        }
+        res_code = res_map.get(str(resolution), "5")
+        
+        interval_secs = {
+            "1": 60, "3": 180, "5": 300, "15": 900, "30": 1800,
+            "60": 3600, "240": 14400, "D": 86400
+        }
+        step_seconds = interval_secs.get(res_code, 300)
         start_time = end_time - (limit * step_seconds)
 
-        params = {
+        # Primary official endpoint: /v2/chart/history
+        chart_params = {
             "symbol": symbol,
-            "resolution": resolution,
-            "start": start_time,
-            "end": end_time,
+            "resolution": res_code,
+            "from": start_time,
+            "to": end_time,
         }
 
         try:
-            res = await self._send_request("GET", "/v2/history/candles", params=params, auth_required=False)
+            res = await self._send_request("GET", "/v2/chart/history", params=chart_params, auth_required=False)
             candles: List[Candle] = []
-            raw_candles = res.get("result", [])
-            for c in raw_candles:
-                if isinstance(c, dict):
+            result_data = res.get("result", {})
+            if isinstance(result_data, dict) and "t" in result_data and result_data["t"]:
+                t_list = result_data.get("t", [])
+                o_list = result_data.get("o", [])
+                h_list = result_data.get("h", [])
+                l_list = result_data.get("l", [])
+                c_list = result_data.get("c", [])
+                v_list = result_data.get("v", [])
+                
+                for i in range(len(t_list)):
                     candles.append(
                         Candle(
-                            time=int(c.get("time", 0)),
-                            open=float(c.get("open", 0.0)),
-                            high=float(c.get("high", 0.0)),
-                            low=float(c.get("low", 0.0)),
-                            close=float(c.get("close", 0.0)),
-                            volume=float(c.get("volume", 0.0)),
+                            time=int(t_list[i]),
+                            open=float(o_list[i]),
+                            high=float(h_list[i]),
+                            low=float(l_list[i]),
+                            close=float(c_list[i]),
+                            volume=float(v_list[i]) if i < len(v_list) else 0.0,
                         )
                     )
-                elif isinstance(c, list) and len(c) >= 6:
-                    candles.append(
-                        Candle(
-                            time=int(c[0]),
-                            open=float(c[1]),
-                            high=float(c[2]),
-                            low=float(c[3]),
-                            close=float(c[4]),
-                            volume=float(c[5]),
+            elif isinstance(result_data, list):
+                for c in result_data:
+                    if isinstance(c, dict):
+                        candles.append(
+                            Candle(
+                                time=int(c.get("time", 0)),
+                                open=float(c.get("open", 0.0)),
+                                high=float(c.get("high", 0.0)),
+                                low=float(c.get("low", 0.0)),
+                                close=float(c.get("close", 0.0)),
+                                volume=float(c.get("volume", 0.0)),
+                            )
                         )
-                    )
+                    elif isinstance(c, list) and len(c) >= 6:
+                        candles.append(
+                            Candle(
+                                time=int(c[0]),
+                                open=float(c[1]),
+                                high=float(c[2]),
+                                low=float(c[3]),
+                                close=float(c[4]),
+                                volume=float(c[5]),
+                            )
+                        )
             if candles:
                 candles.sort(key=lambda x: x.time)
                 self._sim_price = candles[-1].close
                 return candles
         except Exception as e:
-            logger.warning(f"Failed to fetch live Delta candles for {symbol}: {e}")
+            logger.warning(f"Failed to fetch live Delta candles for {symbol} on /v2/chart/history: {e}")
+
+        # Fallback to Delta India public REST if client URL was testnet
+        if self.base_url != settings.DELTA_INDIA_BASE_URL:
+            try:
+                url = f"{settings.DELTA_INDIA_BASE_URL}/v2/chart/history"
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.get(url, params=chart_params)
+                    if resp.status_code == 200:
+                        data = resp.json().get("result", {})
+                        if isinstance(data, dict) and "t" in data and data["t"]:
+                            candles = []
+                            t_list = data["t"]
+                            o_list = data["o"]
+                            h_list = data["h"]
+                            l_list = data["l"]
+                            c_list = data["c"]
+                            v_list = data["v"]
+                            for i in range(len(t_list)):
+                                candles.append(Candle(
+                                    time=int(t_list[i]),
+                                    open=float(o_list[i]),
+                                    high=float(h_list[i]),
+                                    low=float(l_list[i]),
+                                    close=float(c_list[i]),
+                                    volume=float(v_list[i]) if i < len(v_list) else 0.0,
+                                ))
+                            candles.sort(key=lambda x: x.time)
+                            if candles:
+                                self._sim_price = candles[-1].close
+                                return candles
+            except Exception as e2:
+                logger.warning(f"Fallback candle fetch also failed: {e2}")
 
         return []
 
@@ -463,6 +537,28 @@ class DeltaExchangeClient:
                 )
             )
         return positions
+
+    async def get_order_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieves order history from Delta Exchange."""
+        if not self.use_live:
+            return list(self._sim_orders.values())
+        try:
+            res = await self._send_request("GET", "/v2/orders/history", params={"limit": limit}, auth_required=True)
+            return res.get("result", [])
+        except Exception as e:
+            logger.warning(f"Error fetching order history from Delta: {e}")
+            return []
+
+    async def get_fills(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieves trade execution fills and realized P&L from Delta Exchange."""
+        if not self.use_live:
+            return []
+        try:
+            res = await self._send_request("GET", "/v2/fills", params={"limit": limit}, auth_required=True)
+            return res.get("result", [])
+        except Exception as e:
+            logger.warning(f"Error fetching fills from Delta: {e}")
+            return []
 
 
 # Default global client (uses environment credentials if provided)

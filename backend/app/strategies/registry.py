@@ -3,7 +3,7 @@ from typing import Dict, Type, Optional, List, Any
 from app.strategies.base import BaseStrategy
 import logging
 
-logger = logging.getLogger("algoboostx")
+logger = logging.getLogger("QuantEX")
 
 
 class StrategyRegistry:

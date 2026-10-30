@@ -1,4 +1,4 @@
-"""Dedicated Backtesting Service for Algo Boost X.
+"""Dedicated Backtesting Service for QuantEX.
 
 Simulates strategy execution over historical candle series with realistic fee and slippage models,
 calculating institutional-grade performance metrics: ROI, Max Drawdown, Win Rate, and Profit Factor.

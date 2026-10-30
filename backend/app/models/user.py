@@ -1,4 +1,4 @@
-"""User ORM model for Algo Boost X authentication and multi-tenancy."""
+"""User ORM model for QuantEX authentication and multi-tenancy."""
 
 from datetime import datetime, timezone
 import uuid

@@ -1,8 +1,8 @@
-"""Custom exception classes for Algo Boost X Algorithmic Trading System."""
+"""Custom exception classes for QuantEX Algorithmic Trading System."""
 
 
-class AlgoBoostXException(Exception):
-    """Base exception for all Algo Boost X domain exceptions."""
+class QuantEXException(Exception):
+    """Base exception for all QuantEX domain exceptions."""
 
     def __init__(self, message: str, details: dict = None):
         super().__init__(message)
@@ -11,20 +11,20 @@ class AlgoBoostXException(Exception):
 
 
 # Backward compatibility alias
-TokenIQException = AlgoBoostXException
+TokenIQException = QuantEXException
 
 
-class ExchangeConnectionError(AlgoBoostXException):
+class ExchangeConnectionError(QuantEXException):
     """Raised when communication with Delta Exchange fails or times out."""
     pass
 
 
-class AuthenticationError(AlgoBoostXException):
+class AuthenticationError(QuantEXException):
     """Raised when API key or HMAC signature authentication fails."""
     pass
 
 
-class StaleDataError(AlgoBoostXException):
+class StaleDataError(QuantEXException):
     """Raised when market data timestamp exceeds MAX_DATA_AGE_SECONDS threshold."""
     pass
 

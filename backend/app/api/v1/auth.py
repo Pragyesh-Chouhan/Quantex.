@@ -1,4 +1,4 @@
-"""Authentication and User Account endpoints for Algo Boost X."""
+"""Authentication and User Account endpoints for QuantEX."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Security
 from fastapi.security import HTTPAuthorizationCredentials

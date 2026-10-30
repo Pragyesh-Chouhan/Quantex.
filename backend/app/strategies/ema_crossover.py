@@ -1,4 +1,4 @@
-"""EMA Crossover Strategy — Algo Boost X strategy plugin.
+"""EMA Crossover Strategy — QuantEX strategy plugin.
 
 Implements a Golden Cross / Death Cross EMA crossover strategy with an optional
 trend filter and ATR-based stop multiplier. Long-only position policy.

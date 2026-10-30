@@ -11,12 +11,16 @@ import {
   IS_DEMO_DATA,
 } from '../data/demoData';
 import { useNotifications } from './NotificationContext';
+import { useAuth } from './AuthContext';
 import { api } from '../services/api';
 
 const TradingContext = createContext(null);
 
 export const TradingProvider = ({ children }) => {
   const { addToast } = useNotifications();
+  const authContext = useAuth();
+  const user = authContext?.user;
+  const currentUserId = user?.user_id || user?.id || user?.username || 'default_user';
 
   const [instruments, setInstruments] = useState(DEMO_INSTRUMENTS);
   const [selectedSymbol, setSelectedSymbol] = useState('BTC/USDT');
@@ -53,11 +57,11 @@ export const TradingProvider = ({ children }) => {
     setIsSyncing(true);
     try {
       const [accsRes, statusRes, summaryRes, posRes, tradesRes, perfRes] = await Promise.allSettled([
-        api.accounts.list(),
-        api.accounts.getStatus(),
-        api.portfolio.getSummary(),
-        api.portfolio.getPositions(),
-        api.portfolio.getTrades(50),
+        api.accounts.list(currentUserId),
+        api.accounts.getStatus(currentUserId),
+        api.portfolio.getSummary(currentUserId),
+        api.positions.list(currentUserId),
+        api.portfolio.getTrades(50, currentUserId),
         api.portfolio.getPerformance(),
       ]);
 
@@ -98,7 +102,7 @@ export const TradingProvider = ({ children }) => {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [currentUserId]);
 
   // Initial mount sync
   useEffect(() => {
@@ -268,8 +272,51 @@ export const TradingProvider = ({ children }) => {
     });
   }, [addToast]);
 
-  // Execute Simulated Order
-  const executeSimulatedOrder = useCallback((orderData) => {
+  // Execute Simulated or Real Order
+  const executeSimulatedOrder = useCallback(async (orderData) => {
+    // If user has an active connected exchange account, execute live through backend DMA
+    const hasLiveAccount = isBrokerConnected || connectedAccounts.length > 0 || (activeAccountStatus && activeAccountStatus.has_active_account);
+
+    if (hasLiveAccount) {
+      try {
+        const orderPayload = {
+          instrument: (orderData.symbol || 'BTCUSD').replace('/', '').toUpperCase(),
+          side: (orderData.side || 'buy').toLowerCase(),
+          quantity: Number(orderData.quantity),
+          order_type: (orderData.type || 'market').toLowerCase(),
+          price: orderData.price ? Number(orderData.price) : undefined,
+          stop_loss: orderData.stopLoss ? Number(orderData.stopLoss) : undefined,
+          take_profit: orderData.takeProfit ? Number(orderData.takeProfit) : undefined,
+          user_id: currentUserId,
+        };
+
+        const res = await api.orders.create(orderPayload);
+        if (res && (res.internal_id || res.id)) {
+          addToast({
+            title: `Order Submitted: ${orderData.side} ${orderData.symbol}`,
+            message: `Order submitted to Delta Exchange (${res.status || 'SUBMITTED'}). ID: ${res.internal_id}`,
+            type: 'success',
+          });
+          await refreshRealData();
+          return { success: true, orderId: res.internal_id, exchangeId: res.exchange_order_id };
+        } else if (res && res.error) {
+          addToast({
+            title: 'Order Placement Error',
+            message: res.error,
+            type: 'error',
+          });
+          return { success: false, error: res.error };
+        }
+      } catch (err) {
+        addToast({
+          title: 'Order Network Error',
+          message: err.message || 'Failed to place order on exchange.',
+          type: 'error',
+        });
+      }
+    }
+
+    // Isolated Paper / Simulation fallback
     const orderId = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
     const tradeId = `TRD-${Math.floor(10000 + Math.random() * 90000)}`;
     const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -311,7 +358,7 @@ export const TradingProvider = ({ children }) => {
 
       addToast({
         title: `Simulated Order Filled: ${orderData.side} ${orderData.symbol}`,
-        message: `Filled ${orderData.quantity} at $${orderData.price.toLocaleString()} (DEMO MODE - No real funds touched).`,
+        message: `Filled ${orderData.quantity} at $${orderData.price.toLocaleString()} (PAPER MODE - No real funds touched).`,
         type: 'success',
       });
 
@@ -339,24 +386,76 @@ export const TradingProvider = ({ children }) => {
 
       return { success: true, orderId };
     }
-  }, [addToast]);
+  }, [isBrokerConnected, connectedAccounts, activeAccountStatus, currentUserId, addToast, refreshRealData]);
 
   // Cancel Open Order
-  const cancelOrder = useCallback((orderId) => {
+  const cancelOrder = useCallback(async (orderId) => {
+    const hasLiveAccount = isBrokerConnected || connectedAccounts.length > 0 || (activeAccountStatus && activeAccountStatus.has_active_account);
+    if (hasLiveAccount) {
+      try {
+        const res = await api.orders.cancel(orderId, currentUserId);
+        if (res && res.success) {
+          addToast({
+            title: 'Order Cancelled',
+            message: `Order ${orderId} cancelled on exchange.`,
+            type: 'info',
+          });
+          await refreshRealData();
+          return;
+        }
+      } catch (err) {
+        console.error('Error cancelling real order:', err);
+      }
+    }
+
     setOpenOrders((prev) => prev.filter((o) => o.id !== orderId));
     addToast({
       title: 'Order Cancelled',
       message: `Simulated order ${orderId} was cancelled.`,
       type: 'warning',
     });
-  }, [addToast]);
+  }, [isBrokerConnected, connectedAccounts, activeAccountStatus, currentUserId, addToast, refreshRealData]);
 
   // Close Position
-  const closePosition = useCallback((positionId) => {
-    const pos = positions.find((p) => p.id === positionId);
+  const closePosition = useCallback(async (positionIdOrSym) => {
+    const hasLiveAccount = isBrokerConnected || connectedAccounts.length > 0 || (activeAccountStatus && activeAccountStatus.has_active_account);
+
+    if (hasLiveAccount) {
+      let sym = String(positionIdOrSym);
+      const match = positions.find((p) => p.id === positionIdOrSym) || realPositions.find((p) => p.instrument === positionIdOrSym);
+      if (match) {
+        sym = (match.instrument || match.symbol || positionIdOrSym).replace('/', '');
+      }
+      try {
+        const res = await api.positions.close(sym, currentUserId);
+        if (res && res.success) {
+          addToast({
+            title: `Position Closed: ${sym}`,
+            message: `Fill Price: $${res.fill_price} | Realized P&L: ${res.realized_pnl >= 0 ? '+' : ''}$${res.realized_pnl}`,
+            type: 'success',
+          });
+          await refreshRealData();
+          return res;
+        } else {
+          addToast({
+            title: 'Close Position Error',
+            message: res?.message || 'Could not close position on exchange.',
+            type: 'warning',
+          });
+        }
+      } catch (err) {
+        addToast({
+          title: 'Close Position Error',
+          message: err.message,
+          type: 'error',
+        });
+      }
+    }
+
+    const pos = positions.find((p) => p.id === positionIdOrSym || p.symbol === positionIdOrSym);
     if (!pos) return;
 
-    setPositions((prev) => prev.filter((p) => p.id !== positionId));
+    setPositions((prev) => prev.filter((p) => p.id !== pos.id));
 
     const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
     const closeTrade = {
@@ -387,7 +486,7 @@ export const TradingProvider = ({ children }) => {
       message: `Realized P&L: ${pos.pnl >= 0 ? '+' : ''}$${pos.pnl.toFixed(2)} (${pos.pnlPercent.toFixed(2)}%)`,
       type: pos.pnl >= 0 ? 'success' : 'warning',
     });
-  }, [positions, addToast]);
+  }, [isBrokerConnected, connectedAccounts, activeAccountStatus, currentUserId, positions, realPositions, addToast, refreshRealData]);
 
   // Toggle Strategy Status
   const toggleStrategy = useCallback((id) => {
@@ -407,28 +506,42 @@ export const TradingProvider = ({ children }) => {
     );
   }, [addToast]);
 
-  // Add Strategy
-  const addStrategy = useCallback((newStrat) => {
+  // Add Strategy with Backend Persistence
+  const addStrategy = useCallback(async (newStrat) => {
+    try {
+      const res = await api.strategies.addUserStrategy({
+        strategy_id: newStrat.strategy_id || newStrat.id || 'sma_200_trend',
+        user_id: currentUserId,
+        instrument: (newStrat.instrument || newStrat.tradingPair || 'BTCUSD').replace('/', ''),
+        timeframe: newStrat.timeframe || '5m',
+        config: newStrat.config || {},
+      });
+      if (res && res.success) {
+        addToast({
+          title: 'Strategy Persisted',
+          message: res.message || `${newStrat.name} added to your active strategies.`,
+          type: 'success',
+        });
+      }
+    } catch (err) {
+      console.warn('Backend strategy persistence error:', err);
+    }
+
     const created = {
-      id: `strat-${Date.now()}`,
+      id: newStrat.id || `strat-${Date.now()}`,
       status: 'ACTIVE',
-      winRate: 67.5,
-      monthlyReturn: 12.8,
-      sharpeRatio: 2.15,
-      maxDrawdown: 5.4,
+      winRate: newStrat.winRate || 67.5,
+      monthlyReturn: newStrat.monthlyReturn || 12.8,
+      sharpeRatio: newStrat.sharpeRatio || 2.15,
+      maxDrawdown: newStrat.maxDrawdown || 5.4,
       totalTrades: 0,
       pnl: 0,
       lastSignal: { action: 'INITIALIZING', price: 0, time: 'Just now' },
       ...newStrat,
     };
     setStrategies((prev) => [created, ...prev]);
-    addToast({
-      title: 'Strategy Deployed to Lab',
-      message: `${newStrat.name} was successfully configured and saved.`,
-      type: 'success',
-    });
     return created;
-  }, [addToast]);
+  }, [currentUserId, addToast]);
 
   return (
     <TradingContext.Provider

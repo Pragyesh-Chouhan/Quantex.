@@ -21,6 +21,15 @@ import PerformancePage from './pages/PerformancePage';
 import TradingAccountsPage from './pages/TradingAccountsPage';
 import MirrorLeadersPage from './pages/MirrorLeadersPage';
 
+// QuantEX Upgrades
+import StrategyScorecardPage from './pages/StrategyScorecardPage';
+import RiskCenterPage from './pages/RiskCenterPage';
+import ApiHubPage from './pages/ApiHubPage';
+import AiCopilotPage from './pages/AiCopilotPage';
+import TradingJournalPage from './pages/TradingJournalPage';
+import SystemHealthPage from './pages/SystemHealthPage';
+import AuditTrailPage from './pages/AuditTrailPage';
+
 export function App() {
   return (
     <BrowserRouter>
@@ -35,19 +44,35 @@ export function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
 
-              {/* Main Animated Trading Application Layout */}
+              {/* Main QuantEX Trading Application Layout */}
               <Route element={<DashboardLayout />}>
+                {/* Main Workspace */}
                 <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/strategies" element={<AiStrategiesPage />} />
-                <Route path="/performance" element={<PerformancePage />} />
-                <Route path="/accounts" element={<TradingAccountsPage />} />
-                <Route path="/mirror-leaders" element={<MirrorLeadersPage />} />
                 <Route path="/markets" element={<MarketsPage />} />
+                <Route path="/strategies" element={<AiStrategiesPage />} />
+                <Route path="/scorecard" element={<StrategyScorecardPage />} />
                 <Route path="/strategy-lab" element={<StrategyLabPage />} />
                 <Route path="/backtesting" element={<BacktestingPage />} />
-                <Route path="/terminal" element={<TradingTerminalPage />} />
-                <Route path="/portfolio" element={<PortfolioPage />} />
+                <Route path="/performance" element={<PerformancePage />} />
+                <Route path="/journal" element={<TradingJournalPage />} />
                 <Route path="/history" element={<TradeHistoryPage />} />
+
+                {/* Pro Trading */}
+                <Route path="/terminal" element={<TradingTerminalPage />} />
+                <Route path="/accounts" element={<TradingAccountsPage />} />
+                <Route path="/risk" element={<RiskCenterPage />} />
+                <Route path="/portfolio" element={<PortfolioPage />} />
+                <Route path="/mirror-leaders" element={<MirrorLeadersPage />} />
+
+                {/* Integrations */}
+                <Route path="/api-hub" element={<ApiHubPage />} />
+
+                {/* Intelligence */}
+                <Route path="/copilot" element={<AiCopilotPage />} />
+
+                {/* System */}
+                <Route path="/system-health" element={<SystemHealthPage />} />
+                <Route path="/audit-trail" element={<AuditTrailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
 

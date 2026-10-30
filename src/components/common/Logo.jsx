@@ -22,7 +22,7 @@ export const LogoIcon = ({ size = 'md', className = '', glow = true }) => {
       )}
       <img
         src={logoImg}
-        alt="Algo boostX Logo"
+        alt="QuantEX Logo"
         className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(0,255,102,0.25)]"
         loading="eager"
       />
@@ -54,9 +54,9 @@ export const Logo = ({
         <div className={`flex flex-col ${textClassName}`}>
           <div className="flex items-center gap-1 leading-tight">
             <span className={`font-heading font-extrabold tracking-tight text-white ${titleSize}`}>
-              Algo{' '}
+              Quant
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00FF66] via-emerald-400 to-cyan-400">
-                boostX
+                EX
               </span>
             </span>
           </div>

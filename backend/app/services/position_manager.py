@@ -4,8 +4,9 @@ Authoritatively synchronizes positions with Delta Exchange, computes realized/un
 records completed trades, and monitors automated stop-loss and take-profit exit triggers.
 """
 
+import time
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.logger import logger
@@ -149,6 +150,83 @@ class PositionManager:
                 return "BUY", f"Take-profit hit: gain is +{pnl_pct*100:.2f}% >= +{settings.TAKE_PROFIT_PCT*100:.1f}%"
 
         return None
+
+    async def close_position(
+        self,
+        db: Session,
+        instrument: str,
+        client: Optional["DeltaExchangeClient"] = None,
+    ) -> Dict[str, Any]:
+        """Closes an open position authoritatively on exchange and records realized P&L."""
+        from app.exchange.models import ExchangeOrderPayload
+        c = client or exchange_client
+        pos = db.query(Position).filter(Position.instrument == instrument).first()
+        if not pos or abs(pos.size) == 0:
+            return {"success": False, "message": f"No open position found for {instrument}"}
+
+        opposing_side = "sell" if pos.size > 0 else "buy"
+        qty = abs(pos.size)
+
+        payload = ExchangeOrderPayload(
+            product_symbol=instrument,
+            size=qty,
+            side=opposing_side,
+            order_type="market_order",
+            client_order_id=f"close_{instrument}_{int(time.time()*1000)}" if 'time' in globals() else f"close_{instrument}",
+        )
+
+        try:
+            result = await c.place_order(payload)
+            if not result.success and not result.order_id:
+                return {"success": False, "message": f"Exchange rejected close order: {result.error_message}"}
+
+            fill_price = result.fill_price or pos.mark_price or 65000.0
+
+            # Calculate realized P&L
+            fees = round(fill_price * qty * 0.0005, 4)
+            if pos.size > 0:
+                realized_pnl = (fill_price - pos.entry_price) * qty - fees
+            else:
+                realized_pnl = (pos.entry_price - fill_price) * qty - fees
+
+            trade = Trade(
+                order_id=result.order_id or "close_order",
+                instrument=instrument,
+                side=opposing_side,
+                fill_price=fill_price,
+                fill_quantity=qty,
+                fees=fees,
+                realized_pnl=round(realized_pnl, 2),
+                timestamp=datetime.now(timezone.utc),
+            )
+            db.add(trade)
+
+            pos.realized_pnl += round(realized_pnl, 2)
+            pos.size = 0.0
+            pos.unrealized_pnl = 0.0
+            pos.updated_at = datetime.now(timezone.utc)
+
+            runtime_state.add_realized_pnl(realized_pnl)
+            runtime_state.increment_metric("trades_completed")
+            if realized_pnl > 0:
+                runtime_state.increment_metric("winning_trades")
+            else:
+                runtime_state.increment_metric("losing_trades")
+
+            db.commit()
+            db.refresh(pos)
+
+            return {
+                "success": True,
+                "message": f"Successfully closed {instrument} position.",
+                "fill_price": fill_price,
+                "closed_quantity": qty,
+                "realized_pnl": round(realized_pnl, 2),
+                "fees": fees,
+            }
+        except Exception as e:
+            logger.error(f"Failed to execute position close for {instrument}: {e}")
+            return {"success": False, "message": str(e)}
 
 
 position_manager = PositionManager()

@@ -1,4 +1,4 @@
-"""Centralized configuration management for Algo Boost X.
+"""Centralized configuration management for QuantEX.
 
 Loads settings from environment variables and .env file with validated defaults.
 """
@@ -28,19 +28,29 @@ class Settings(BaseSettings):
             env_file = str(BASE_DIR / ".env")
             extra = "ignore"
     # Application Info
-    APP_NAME: str = "Algo Boost X"
-    APP_VERSION: str = "2.0.0"
+    APP_NAME: str = "QuantEX"
+    APP_VERSION: str = "2.5.0"
     APP_ENV: str = "development"
     LOG_LEVEL: str = "INFO"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
-    # Delta Exchange Testnet Configuration
+    # Delta Exchange India (Official Endpoints)
+    DELTA_INDIA_BASE_URL: str = "https://api.india.delta.exchange"
+    DELTA_INDIA_WS_URL: str = "wss://public-socket.india.delta.exchange"
+    DELTA_TESTNET_BASE_URL: str = "https://cdn-ind.testnet.deltaex.org"
+    DELTA_TESTNET_WS_URL: str = "wss://socket-ind.testnet.deltaex.org"
+
+    # Active Delta Configuration
     DELTA_API_KEY: str = Field(default="", description="Delta Exchange API Key")
     DELTA_API_SECRET: str = Field(default="", description="Delta Exchange API Secret")
-    DELTA_BASE_URL: str = "https://cdn-ind.testnet.deltaex.org"
-    DELTA_WS_URL: str = "wss://socket-ind.testnet.deltaex.org"
-    USE_LIVE_TESTNET: bool = False  # Set true when live testnet credentials are provided
+    DELTA_BASE_URL: str = "https://api.india.delta.exchange"
+    DELTA_WS_URL: str = "wss://public-socket.india.delta.exchange"
+    USE_LIVE_TESTNET: bool = False
+
+    # Secondary Exchange - Binance Spot
+    BINANCE_BASE_URL: str = "https://api.binance.com"
+    BINANCE_WS_URL: str = "wss://stream.binance.com:9443/ws"
 
     # Instrument and Strategy Parameters
     DEFAULT_INSTRUMENT: str = "BTCUSD"

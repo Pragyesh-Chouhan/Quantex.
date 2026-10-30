@@ -38,7 +38,7 @@ export const SettingsPage = () => {
 
   // Profile fields
   const [name, setName] = useState(user?.name || 'Alex Rivera');
-  const [email, setEmail] = useState(user?.email || 'quant.alex@algoboostx.ai');
+  const [email, setEmail] = useState(user?.email || 'quant.alex@QuantEX.ai');
   const [bio, setBio] = useState('Quantitative trader focusing on mean reversion and momentum AI models.');
 
   // Notification toggles
@@ -48,7 +48,7 @@ export const SettingsPage = () => {
   const [webhookPings, setWebhookPings] = useState(false);
 
   // Trading View Bot Webhook
-  const [webhookUrl] = useState('https://api.algoboostx.ai/v1/webhooks/tv_bot_981a');
+  const [webhookUrl] = useState('https://api.QuantEX.ai/v1/webhooks/tv_bot_981a');
   const [webhookSecret] = useState('sec_tv_live_449198aa2b');
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -323,7 +323,7 @@ export const SettingsPage = () => {
             <Card title="Trading View Bot" subtitle="Webhook alert automation bridge" headerBadge={<DemoBadge size="xs" />}>
               <div className="space-y-4 text-xs font-mono">
                 <p className="text-slate-400 leading-relaxed font-sans">
-                  Connect your custom PineScript alerts directly to Algo boostX execution pipeline using incoming webhooks.
+                  Connect your custom PineScript alerts directly to QuantEX execution pipeline using incoming webhooks.
                 </p>
 
                 <div>
@@ -481,7 +481,7 @@ export const SettingsPage = () => {
           isOpen={deleteModalOpen}
           onClose={() => setDeleteModalOpen(false)}
           title="Confirm Account Deletion"
-          subtitle="Are you sure you want to delete your Algo boostX account?"
+          subtitle="Are you sure you want to delete your QuantEX account?"
           footer={
             <>
               <Button variant="ghost" size="sm" onClick={() => setDeleteModalOpen(false)}>

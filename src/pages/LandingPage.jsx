@@ -246,7 +246,7 @@ export const LandingPage = () => {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="mt-6 text-base sm:text-xl text-slate-300 max-w-2xl font-normal leading-relaxed"
           >
-            Explore intelligent trading strategies, analyze market movements, and build your trading workflow with Algo boostX.
+            Explore intelligent trading strategies, analyze market movements, and build your trading workflow with QuantEX.
           </motion.p>
 
           {/* Hero Buttons */}
@@ -297,7 +297,7 @@ export const LandingPage = () => {
                       <span className="w-3 h-3 rounded-full bg-emerald-500/80" />
                     </div>
                     <span className="text-xs font-mono text-slate-400 pl-2">
-                      Algo boostX Terminal • BTC/USDT Perpetual
+                      QuantEX Terminal • BTC/USDT Perpetual
                     </span>
                   </div>
                   <DemoBadge size="xs" />
@@ -461,7 +461,7 @@ export const LandingPage = () => {
               SYSTEM ARCHITECTURE
             </Badge>
             <h2 className="font-heading font-extrabold text-3xl sm:text-5xl tracking-tight text-white">
-              How Algo boostX Operates
+              How QuantEX Operates
             </h2>
             <p className="mt-4 text-slate-400 text-sm sm:text-base leading-relaxed">
               From market selection to backtesting and live backend engine connectivity in 5 intuitive steps.
@@ -538,7 +538,7 @@ export const LandingPage = () => {
           </div>
 
           <div className="font-mono text-slate-500 text-[11px]">
-            &copy; 2026 Algo boostX. All rights reserved.
+            &copy; 2026 QuantEX. All rights reserved.
           </div>
         </div>
       </footer>

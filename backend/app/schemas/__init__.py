@@ -1,4 +1,4 @@
-"""Schemas export for Algo Boost X."""
+"""Schemas export for QuantEX."""
 
 from app.schemas.signal import SignalCreate, SignalResponse
 from app.schemas.order import OrderCreate, OrderResponse

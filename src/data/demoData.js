@@ -1,4 +1,4 @@
-// Comprehensive Demo Datasets for Algo boostX
+// Comprehensive Demo Datasets for QuantEX
 // Explicitly structured for frontend UI and future backend integration
 
 export const IS_DEMO_DATA = true;
@@ -726,7 +726,7 @@ export const DEMO_MIRROR_LEADERS = [
   },
 ];
 
-// Feature 9: Algo boostX AI Strategies
+// Feature 9: QuantEX AI Strategies
 export const DEMO_AI_STRATEGIES_CATALOG = [
   {
     id: "strat-ma-cross",

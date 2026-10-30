@@ -1,4 +1,4 @@
-"""Trend Following with ADX and EMA Strategy — Algo Boost X strategy plugin.
+"""Trend Following with ADX and EMA Strategy — QuantEX strategy plugin.
 
 Identifies strong trends using the Average Directional Index (ADX) combined with
 +DI/-DI directional indicators and an EMA trend filter. Generates BUY on strong bullish

@@ -1,4 +1,4 @@
-"""ORM Models export for Algo Boost X."""
+"""ORM Models export for QuantEX."""
 
 from app.models.signal import Signal
 from app.models.order import Order
